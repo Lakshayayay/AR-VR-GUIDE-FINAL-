@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'missing_key');
-const MODEL = 'gemini-3.1-flash-lite-preview';
+const MODEL = 'gemini-flash-latest'; // Best 'catch-all' alias for quota management
 const model = genAI.getGenerativeModel({ model: MODEL }, { apiVersion: 'v1beta' });
 const textModel = genAI.getGenerativeModel({ model: MODEL }, { apiVersion: 'v1beta' });
 
@@ -12,7 +12,7 @@ let rateLimitedUntil = 0;
 const isRateLimited = () => Date.now() < rateLimitedUntil;
 const setRateLimit = (retryAfterMs = 60000) => {
   rateLimitedUntil = Date.now() + retryAfterMs;
-  console.warn(`[VisionAnalyzer] Rate limited — pausing analysis for ${retryAfterMs/1000}s`);
+  console.warn(`[VisionAnalyzer] Rate limited — pausing analysis for ${Math.round(retryAfterMs/1000)}s`);
 };
 
 // --- PRIMARY ANALYSIS: Visual Anomaly Detection ---

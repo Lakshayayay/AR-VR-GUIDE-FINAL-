@@ -12,7 +12,7 @@ import { formatAlert, emitAlertToSession, emitSOPUpdate, emitSignOffResult } fro
 
 dotenv.config();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'missing_key');
-const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' }, { apiVersion: 'v1beta' });
+const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' }, { apiVersion: 'v1beta' });
 
 const app = express();
 app.use(cors());
