@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
+import * as THREE from 'three';
 import AICopilotPanel from './components/AICopilotPanel';
 
 const SESSION_ID = 'HAL-123';
@@ -109,12 +110,27 @@ function LiveSession({ selectedSession, setSelectedSession }: {
   const previewCanvasRef = useRef(null);
   const socketRef = useRef(null);
   const peerRef = useRef(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const streamPromiseRef = useRef<Promise<MediaStream> | null>(null);
   const isDrawing = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
   const lastPos = useRef({ x: 0, y: 0 });
+
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const annotationGroupRef = useRef<THREE.Group | null>(null);
+  
+  const trackerStateRef = useRef({
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    active: false
+  });
+
   const [connectionStatus, setConnectionStatus] = useState('Connecting...');
   const [socket, setSocket] = useState(null);
-  const [trackingOffset, setTrackingOffset] = useState({ xPct: 0, yPct: 0 });
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -138,21 +154,76 @@ function LiveSession({ selectedSession, setSelectedSession }: {
     socket.on('connect', () => {
       setConnectionStatus('Server Connected. Waiting for Technician...');
       socket.emit('join-session', SESSION_ID);
+      
+      // Capture local audio to send to technician
+      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        console.log('Expert mic captured');
+        localStreamRef.current = stream;
+        return stream;
+      }).catch(err => {
+        console.error('Mic access denied:', err);
+        throw err;
+      });
     });
 
     socket.on('clear-annotations', () => {
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      console.log('Expert received clear command');
+      if (previewCanvasRef.current) {
+        const pCtx = previewCanvasRef.current.getContext('2d');
+        pCtx?.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
       }
-      setTrackingOffset({ xPct: 0, yPct: 0 });
+      if (annotationGroupRef.current) {
+        const toRemove: THREE.Object3D[] = [];
+        annotationGroupRef.current.children.forEach(c => {
+           if ((c as any).userData.isAnnotation) toRemove.push(c);
+        });
+        toRemove.forEach(c => {
+           annotationGroupRef.current?.remove(c);
+           if ((c as any).geometry) (c as any).geometry.dispose();
+           if ((c as any).material) (c as any).material.dispose();
+        });
+        annotationGroupRef.current.position.set(0, 0, 0);
+      }
+      trackerStateRef.current.active = false;
+    });
+
+    socket.on('annotation', (data: any) => {
+      console.log('Expert received annotation from technician:', data.tool);
+      if (previewCanvasRef.current) {
+        const pCtx = previewCanvasRef.current.getContext('2d');
+        if (!pCtx) return;
+
+        pCtx.strokeStyle = data.color || '#00ff00';
+        pCtx.lineWidth = 3;
+        pCtx.lineCap = 'round';
+        pCtx.lineJoin = 'round';
+
+        if (data.tool === 'freehand' || data.tool === 'line') {
+          pCtx.beginPath();
+          pCtx.moveTo(data.x1, data.y1);
+          pCtx.lineTo(data.x2, data.y2);
+          pCtx.stroke();
+        } else {
+           // For geometric shapes, we can use the drawShape helper if available
+           // or just draw a line for now to ensure visibility
+           pCtx.beginPath();
+           pCtx.moveTo(data.x1, data.y1);
+           pCtx.lineTo(data.x2, data.y2);
+           pCtx.stroke();
+        }
+      }
     });
 
     socket.on('tracking_update', (data: any) => {
-      setTrackingOffset({ 
-        xPct: (data.dx / data.canvasW) * 100, 
-        yPct: (data.dy / data.canvasH) * 100 
-      });
+      if (!annotationGroupRef.current || !cameraRef.current) return;
+
+      // Match the technician's unified 16:9 reference for sync
+      const vFov = THREE.MathUtils.degToRad(cameraRef.current.fov);
+      const planeHeight = 2 * Math.tan(vFov / 2) * cameraRef.current.position.z;
+      const planeWidth = planeHeight * (16 / 9);
+
+      annotationGroupRef.current.position.x = (data.dx / 400) * planeWidth;
+      annotationGroupRef.current.position.y = -(data.dy / 225) * planeHeight;
     });
 
     socket.on('user-joined', (userId: string) => {
@@ -167,6 +238,16 @@ function LiveSession({ selectedSession, setSelectedSession }: {
         peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         peerRef.current = peer;
 
+        // Add expert audio track to the connection (non-blocking)
+        if (localStreamRef.current) {
+          console.log('Adding expert tracks to peer');
+          localStreamRef.current.getTracks().forEach(track => {
+            peer.addTrack(track, localStreamRef.current);
+          });
+        } else {
+          console.warn('Expert mic not ready yet. Proceeding with video only.');
+        }
+
         peer.onicecandidate = e => {
           if (e.candidate) socket.emit('signal', { to: data.from, signal: { type: 'candidate', candidate: e.candidate } });
         };
@@ -176,9 +257,12 @@ function LiveSession({ selectedSession, setSelectedSession }: {
         };
 
         peer.ontrack = e => {
+          console.log('Expert received remote track:', e.track.kind);
           setConnectionStatus('Live Stream Active!');
           if (videoRef.current) {
             videoRef.current.srcObject = e.streams[0];
+            // Ensure muted state is correct
+            videoRef.current.muted = !speakerEnabled;
             videoRef.current.play().catch(err => console.error('Play error:', err));
           }
         };
@@ -198,6 +282,56 @@ function LiveSession({ selectedSession, setSelectedSession }: {
     return () => {
       socket.disconnect();
       if (peerRef.current) peerRef.current.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.volume = volume / 100;
+    }
+  }, [volume]);
+
+  // Initialize Three.js Scene (Mirroring Technician)
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(85, 1280 / 720, 0.1, 1000);
+    camera.position.z = 5;
+
+    const annotationGroup = new THREE.Group();
+    scene.add(annotationGroup);
+
+    rendererRef.current = renderer;
+    sceneRef.current = scene;
+    cameraRef.current = camera;
+    annotationGroupRef.current = annotationGroup;
+
+    let animationId: number;
+    const animate = () => {
+      animationId = requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const handleResize = () => {
+      if (!canvasRef.current) return;
+      const parent = canvasRef.current.parentElement;
+      if (parent) {
+        const width = parent.clientWidth;
+        const height = parent.clientHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      window.removeEventListener('resize', handleResize);
+      renderer.dispose();
     };
   }, []);
 
@@ -223,6 +357,9 @@ function LiveSession({ selectedSession, setSelectedSession }: {
     const pos = getCanvasPos(e);
     startPos.current = pos;
     lastPos.current = pos;
+    
+    // Set active flag for tracking sync
+    trackerStateRef.current.active = true;
   };
 
   const drawShape = (ctx: any, tool: string, x1: number, y1: number, x2: number, y2: number, color: string) => {
@@ -293,14 +430,17 @@ function LiveSession({ selectedSession, setSelectedSession }: {
         });
       }
 
-      const ctx = canvasRef.current.getContext('2d');
-      ctx.beginPath();
-      ctx.moveTo(lastPos.current.x, lastPos.current.y);
-      ctx.lineTo(newPos.x, newPos.y);
-      ctx.strokeStyle = hex;
-      ctx.lineWidth = 5;
-      ctx.lineCap = 'round';
-      ctx.stroke();
+      // Draw on preview canvas (never on the WebGL canvas)
+      if (previewCanvasRef.current) {
+        const pCtx = previewCanvasRef.current.getContext('2d');
+        pCtx.beginPath();
+        pCtx.moveTo(lastPos.current.x, lastPos.current.y);
+        pCtx.lineTo(newPos.x, newPos.y);
+        pCtx.strokeStyle = hex;
+        pCtx.lineWidth = 5;
+        pCtx.lineCap = 'round';
+        pCtx.stroke();
+      }
       lastPos.current = newPos;
     }
   };
@@ -309,31 +449,77 @@ function LiveSession({ selectedSession, setSelectedSession }: {
     if (!isDrawing.current) return;
     const endPos = getCanvasPos(e);
     const hex = getHexColor(activeColor);
-    const isGeometric = ['rectangle', 'circle', 'arrow'].includes(activeTool);
+    const isGeometric = ['rectangle', 'circle', 'arrow', 'freehand', 'line'].includes(activeTool);
 
-    if (isGeometric) {
-      // Draw final shape on main canvas
-      const ctx = canvasRef.current.getContext('2d');
-      drawShape(ctx, activeTool, startPos.current.x, startPos.current.y, endPos.x, endPos.y, hex);
-      
+    if (isGeometric && sceneRef.current && cameraRef.current && annotationGroupRef.current) {
+      const data = {
+        tool: activeTool,
+        x1: startPos.current.x,
+        y1: startPos.current.y,
+        x2: endPos.x,
+        y2: endPos.y,
+        color: hex,
+        canvasW: canvasRef.current.width,
+        canvasH: canvasRef.current.height
+      };
+
+      // 3D Mesh Generation (Mirroring Technician)
+      const nx1 = (data.x1 / data.canvasW) * 2 - 1;
+      const ny1 = -(data.y1 / data.canvasH) * 2 + 1;
+      const nx2 = (data.x2 / data.canvasW) * 2 - 1;
+      const ny2 = -(data.y2 / data.canvasH) * 2 + 1;
+
+      const vec1 = new THREE.Vector3(nx1, ny1, 0.5).unproject(cameraRef.current);
+      const vec2 = new THREE.Vector3(nx2, ny2, 0.5).unproject(cameraRef.current);
+      const material = new THREE.MeshBasicMaterial({ color: hex });
+      let mesh: THREE.Object3D;
+
+      if (data.tool === 'rectangle') {
+        const group = new THREE.Group();
+        const p1 = vec1.clone();
+        const p2 = new THREE.Vector3(vec2.x, vec1.y, vec1.z);
+        const p3 = vec2.clone();
+        const p4 = new THREE.Vector3(vec1.x, vec2.y, vec1.z);
+        [[p1, p2], [p2, p3], [p3, p4], [p4, p1]].forEach(([v1, v2]) => {
+          const path = new THREE.LineCurve3(v1, v2);
+          group.add(new THREE.Mesh(new THREE.TubeGeometry(path, 1, 0.005, 8, false), material));
+        });
+        mesh = group;
+      } else if (data.tool === 'circle') {
+        const radius = vec1.distanceTo(vec2);
+        mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.005, 8, 50), material);
+        mesh.position.copy(vec1);
+        mesh.lookAt(cameraRef.current.position);
+      } else if (data.tool === 'arrow') {
+        const group = new THREE.Group();
+        group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(vec1, vec2), 1, 0.005, 8, false), material));
+        const dir = new THREE.Vector3().subVectors(vec2, vec1).normalize();
+        const head = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 8), material);
+        head.position.copy(vec2);
+        head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        group.add(head);
+        mesh = group;
+      } else {
+        mesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(vec1, vec2), 20, 0.005, 8, false), material);
+      }
+
+      (mesh as any).userData.isAnnotation = true;
+      // Offset mesh by current group position to place it accurately in world space
+      mesh.position.x -= annotationGroupRef.current.position.x;
+      mesh.position.y -= annotationGroupRef.current.position.y;
+      annotationGroupRef.current.add(mesh);
+
       // Clear preview
       if (previewCanvasRef.current) {
         const pCtx = previewCanvasRef.current.getContext('2d');
         pCtx.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
       }
 
-      // Emit final shape
-      if (socketRef.current) {
+      // Emit annotation (freehand/line already emitted during drawing)
+      if (['rectangle', 'circle', 'arrow'].includes(activeTool) && socketRef.current) {
         socketRef.current.emit('annotation', {
           sessionId: SESSION_ID,
-          tool: activeTool,
-          x1: startPos.current.x,
-          y1: startPos.current.y,
-          x2: endPos.x,
-          y2: endPos.y,
-          color: hex,
-          canvasW: canvasRef.current.width,
-          canvasH: canvasRef.current.height
+          ...data
         });
       }
     }
@@ -353,10 +539,37 @@ function LiveSession({ selectedSession, setSelectedSession }: {
     }
   };
 
+  const toggleMic = () => {
+    const newState = !micEnabled;
+    setMicEnabled(newState);
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) audioTrack.enabled = newState;
+    }
+  };
+
+  const toggleSpeaker = () => {
+    const newState = !speakerEnabled;
+    setSpeakerEnabled(newState);
+    if (videoRef.current) {
+      videoRef.current.muted = !newState;
+    }
+  };
+
   const clearAnnotations = () => {
-     if (!canvasRef.current) return;
-     const ctx = canvasRef.current.getContext('2d');
-     ctx.clearRect(0,0, canvasRef.current.width, canvasRef.current.height);
+     if (annotationGroupRef.current) {
+        const toRemove: THREE.Object3D[] = [];
+        annotationGroupRef.current.children.forEach(c => {
+           if ((c as any).userData.isAnnotation) toRemove.push(c);
+        });
+        toRemove.forEach(c => {
+           annotationGroupRef.current?.remove(c);
+           if ((c as any).geometry) (c as any).geometry.dispose();
+           if ((c as any).material) (c as any).material.dispose();
+        });
+        annotationGroupRef.current.position.set(0, 0, 0);
+     }
+     trackerStateRef.current.active = false;
      if(socketRef.current) socketRef.current.emit('clear-annotations', { sessionId: SESSION_ID });
   };
 
@@ -442,7 +655,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
             <div className="w-full h-full relative">
               <video 
                 ref={videoRef}
-                autoPlay playsInline muted
+                autoPlay playsInline
                 className="absolute inset-0 w-full h-full object-contain"
               />
               <canvas
@@ -669,7 +882,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
             <div className="flex items-center justify-between">
               <span className="text-sm">Microphone</span>
               <button
-                onClick={() => setMicEnabled(!micEnabled)}
+                onClick={toggleMic}
                 className={`w-11 h-6 rounded-full transition-colors relative ${
                   micEnabled ? 'bg-[var(--hal-blue)]' : 'bg-switch-background'
                 }`}
@@ -682,7 +895,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
             <div className="flex items-center justify-between">
               <span className="text-sm">Speaker</span>
               <button
-                onClick={() => setSpeakerEnabled(!speakerEnabled)}
+                onClick={toggleSpeaker}
                 className={`w-11 h-6 rounded-full transition-colors relative ${
                   speakerEnabled ? 'bg-[var(--hal-blue)]' : 'bg-switch-background'
                 }`}

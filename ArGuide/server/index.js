@@ -32,12 +32,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('annotation', (data) => {
-    // broadcast drawing to everyone else in the room
-    socket.to(data.sessionId).emit('annotation', data);
+    // broadcast drawing to everyone in the room (including sender)
+    io.to(data.sessionId).emit('annotation', data);
   });
   
   socket.on('clear-annotations', (data) => {
-    socket.to(data.sessionId).emit('clear-annotations');
+    io.to(data.sessionId).emit('clear-annotations');
   });
 
   socket.on('tracking_update', (data) => {
