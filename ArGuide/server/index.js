@@ -48,26 +48,6 @@ io.on('connection', (socket) => {
     console.log('User disconnected', socket.id);
   });
 
-  // ========== CALL FLOW RELAY ==========
-  socket.on('incoming-call', (data) => {
-    console.log(`[Call] Incoming call from ${data.callerName} (socket: ${socket.id})`);
-    io.emit('incoming-call', { ...data, callerSocketId: socket.id });
-  });
-
-  socket.on('call-accepted', (data) => {
-    console.log(`[Call] Call accepted for ${data.to}`);
-    io.to(data.to).emit('call-accepted', data);
-  });
-
-  socket.on('call-rejected', (data) => {
-    io.to(data.to).emit('call-rejected', data);
-  });
-
-  socket.on('end-call', (data) => {
-    console.log(`[Call] Call ended in session ${data.sessionId}`);
-    io.emit('call-ended', data);
-  });
-
   // ========== AI CO-PILOT EVENT RELAY ==========
   socket.on('register_ai_service', (data) => {
     console.log('[Server] AI Co-Pilot service registered:', data);
@@ -79,26 +59,6 @@ io.on('connection', (socket) => {
     const { room, alert } = data;
     io.to(room).emit('ai_alert', alert);
     console.log(`[Server] AI alert relayed to room ${room}: ${alert.title}`);
-  });
-
-  socket.on('broadcast-ai-alert', (data) => {
-    const { sessionId, alert } = data;
-    console.log(`[AI Alert] Session ${sessionId}: ${alert.severity} - ${alert.finding}`);
-    io.to(sessionId).emit('ai-alert', alert);
-  });
-  
-  socket.on('select-sop', (data) => {
-    const { sessionId, sopId } = data;
-    console.log(`[SOP Selected] Session ${sessionId}: ${sopId}`);
-    io.to(sessionId).emit('sop-activated', { sopId });
-  });
-
-  socket.on('alert-action', (data) => {
-    fetch('http://localhost:3001/api/alert-action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }).catch(err => console.log('Error forwarding alert-action:', err.message));
   });
 
   socket.on('sop_step_update', (data) => {
