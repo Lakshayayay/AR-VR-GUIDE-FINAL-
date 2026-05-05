@@ -1,0 +1,9 @@
+{
+  "name": "ar-vr-guide",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "cd temp_ui/technician && npm install && npm run build",
+    "dev": "cd temp_ui/technician && npm install && npm run dev"
+  }
+}

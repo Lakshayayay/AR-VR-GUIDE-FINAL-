@@ -1,0 +1,16 @@
+{
+  "id": "SOP-AVI-001",
+  "name": "Avionics Systems Check",
+  "repair_type": "avionics",
+  "expected_duration_min": 25,
+  "expected_duration_max": 60,
+  "steps": [
+    { "number": 1, "name": "Power on all avionics systems", "critical": true },
+    { "number": 2, "name": "Verify communication systems", "critical": true },
+    { "number": 3, "name": "Check navigation instruments", "critical": true },
+    { "number": 4, "name": "Test autopilot disconnect", "critical": true },
+    { "number": 5, "name": "Verify warning systems", "critical": true },
+    { "number": 6, "name": "Check display integrity", "critical": false },
+    { "number": 7, "name": "Log and sign off", "critical": false }
+  ]
+}

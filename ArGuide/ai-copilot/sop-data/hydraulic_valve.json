@@ -1,0 +1,19 @@
+{
+  "id": "SOP-HYD-001",
+  "name": "Hydraulic Valve Replacement",
+  "repair_type": "hydraulic",
+  "expected_duration_min": 20,
+  "expected_duration_max": 45,
+  "steps": [
+    { "number": 1, "name": "Depressurize hydraulic system", "critical": true },
+    { "number": 2, "name": "Isolate valve with shutoff valves", "critical": true },
+    { "number": 3, "name": "Drain residual fluid into catch tray", "critical": false },
+    { "number": 4, "name": "Remove mounting bolts", "critical": false },
+    { "number": 5, "name": "Inspect O-ring seating surfaces for damage", "critical": true },
+    { "number": 6, "name": "Install new valve with fresh O-rings", "critical": true },
+    { "number": 7, "name": "Torque bolts to specification", "critical": true },
+    { "number": 8, "name": "Pressure test installation", "critical": true },
+    { "number": 9, "name": "Check all joints for leaks", "critical": true },
+    { "number": 10, "name": "Complete documentation and sign-off", "critical": false }
+  ]
+}

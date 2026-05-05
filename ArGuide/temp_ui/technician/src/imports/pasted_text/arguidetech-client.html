@@ -1,0 +1,98 @@
+Design a complete UI/UX for the ArGuide Technician Client — the mobile interface used by a HAL field technician on the shop floor. This is a lightweight, browser-based page that runs on any Android phone (Chrome) over the local LAN. No app install. It must feel focused, minimal, and distraction-free — the technician is working with their hands and needs glanceable information only.
+
+PRODUCT CONTEXT
+The technician opens a URL on their phone browser. Their rear camera turns on automatically. A remote expert watching their feed draws AR annotations — arrows, circles, labels — which appear overlaid on the technician's screen in real time on top of the camera view. A second layer shows AI-detected component bounding boxes. The technician can talk to the expert via audio. That's it. Nothing else needed.
+
+VISUAL DIRECTION
+Aesthetic: Fullscreen camera-first. The camera feed fills the entire screen edge to edge. All UI elements float as minimal HUD overlays — semi-transparent chips and icons only. Nothing should obstruct the camera view. Think fighter pilot HUD meets field utility app.
+Color palette: Black background behind the camera feed. Teal (#5DCAA5) for AR annotation overlays and detection boxes. Red (#E24B4A) for recording indicator. Amber (#EF9F27) for warnings. White for all HUD text. UI chrome uses rgba(0,0,0,0.55) frosted dark chips.
+Typography: Monospace for all live data (latency, session ID, timer). Sans-serif for labels and buttons. All text white or near-white. Font sizes generous — minimum 14px — since the user is outdoors or in a noisy industrial environment.
+No gradients. No decorative elements. Flat chips and icon buttons only. Rounded pill shapes for status badges.
+
+SCREEN LAYOUT — MOBILE FULLSCREEN (portrait and landscape)
+The camera feed fills 100% of the screen (width and height). All UI floats as absolute-positioned HUD layers on top.
+
+HUD ELEMENTS TO DESIGN
+
+TOP BAR (floating, semi-transparent dark strip across the top)
+
+Left: Session ID in monospace (e.g. SES-20240418-001) + expert name below it in smaller muted white
+Center: connection status pill — green dot + "Connected" or red dot + "Reconnecting..."
+Right: recording indicator — red pulsing dot + timer "00:14:23" in monospace (only shown when recording is active)
+
+
+LATENCY CHIP (top-left corner, below session info)
+
+Small pill: "Latency: 42ms" in teal monospace text on dark chip
+Changes color: teal under 100ms, amber 100–200ms, red over 200ms
+
+
+AR ANNOTATION LAYER (middle of screen — the main content)
+
+Show example annotations floating over the camera view:
+· Red arrow pointing at a component
+· Amber circle with filled label chip "Inspect here" in amber
+· Teal rectangle outline labeled "Hydraulic valve"
+Annotations appear and fade out after expert clears them
+Show AI detection boxes: thin teal dashed border boxes with small label chips above ("Valve 94%", "Fastener 87%")
+
+
+BOTTOM CONTROL BAR (floating dark strip at the bottom)
+
+Left side: Mic button — circular icon button, white icon, dark chip background. Active state: teal tint. Muted state: red tint with diagonal slash through mic icon.
+Center: large camera flip button (front/rear toggle) — slightly larger than the other buttons
+Right side: End Session button — pill shaped, red background, white text "End"
+Between mic and camera: torch/flashlight toggle button (useful in dark industrial spaces)
+
+
+EXPERT MESSAGE BANNER (appears temporarily when expert sends a text annotation or label)
+
+Slides in from the top below the top bar
+Dark semi-transparent wide chip: "Expert: Check the hydraulic seal on the left side"
+Auto-dismisses after 5 seconds with a progress bar underneath
+
+
+CONNECTION LOST OVERLAY (full screen overlay state)
+
+Semi-transparent dark overlay over the camera
+Center: large amber warning icon + "Connection Lost" in large white text + "Reconnecting to server..." in smaller muted text
+Pulsing animation on the warning icon
+Bottom: "Retry Now" button in amber
+
+
+FREEZE FRAME INDICATOR (when expert activates freeze frame)
+
+Thin teal border appears around the entire screen edge
+Top-center chip: "FREEZE" label in teal on dark background
+Camera feed appears slightly desaturated to indicate it is paused
+
+
+LASER POINTER (when expert activates laser pointer mode)
+
+A bright teal pulsing dot appears at the coordinates sent by the expert over WebSocket
+Dot is approximately 20px with a soft outer ring (no blur — use concentric circles)
+Moves smoothly to new coordinates as expert moves their cursor
+
+
+
+
+INTERACTION STATES
+
+Mic button: active (white icon), muted (red tint + slash), pressed (scale down slightly)
+End session: default (red pill), press confirmation (shows "Are you sure?" inline with confirm/cancel — do not use a modal)
+All icon buttons: 48px minimum touch target
+Torch button: off (dark chip), on (amber tint)
+Camera feed: live (normal), freeze frame (desaturated + teal border), connection lost (dark overlay)
+
+
+LANDSCAPE MODE
+Show a landscape variant where:
+
+Camera feed is still fullscreen
+Top bar shifts to left edge as a vertical strip
+Bottom controls shift to right edge as a vertical column
+AR annotations and detection layer remain centered on screen
+
+
+OUTPUT
+Single self-contained HTML file with embedded CSS and JavaScript. Camera feed simulated as a dark textured rectangle (no actual camera access needed for the mockup). All HUD elements rendered as absolute-positioned overlays. Show both the default live state and the freeze frame state stacked vertically so both are visible. Minimal JS for mic toggle, torch toggle, and end session confirmation. Must work in both light and dark mode (the camera area stays dark regardless).

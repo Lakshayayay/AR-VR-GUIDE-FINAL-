@@ -1,0 +1,16 @@
+{
+  "id": "SOP-ENG-001",
+  "name": "Engine Assembly Check",
+  "repair_type": "engine",
+  "expected_duration_min": 30,
+  "expected_duration_max": 90,
+  "steps": [
+    { "number": 1, "name": "Visual inspection of all external components", "critical": true },
+    { "number": 2, "name": "Check all fastener torques", "critical": true },
+    { "number": 3, "name": "Verify fuel line connections", "critical": true },
+    { "number": 4, "name": "Inspect for oil leaks", "critical": true },
+    { "number": 5, "name": "Check sensor connections", "critical": false },
+    { "number": 6, "name": "Run startup diagnostics", "critical": true },
+    { "number": 7, "name": "Document findings", "critical": false }
+  ]
+}
