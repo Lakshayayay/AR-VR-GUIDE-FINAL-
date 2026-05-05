@@ -71,7 +71,30 @@ export function initDatabase() {
       expected_duration_max INTEGER,
       steps TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS pre_diagnostics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      image_hash TEXT NOT NULL,
+      equipment_type TEXT,
+      issue TEXT,
+      severity TEXT,
+      confidence REAL,
+      parts_needed TEXT,
+      recommendation TEXT,
+      repair_steps TEXT,
+      reasoning TEXT,
+      timestamp TEXT NOT NULL,
+      technician_action TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pre_diag_timestamp 
+    ON pre_diagnostics(timestamp);
   `);
+
+  try { db.exec(`ALTER TABLE ai_alerts ADD COLUMN response_timestamp TEXT;`); } catch(e) {}
+  try { db.exec(`ALTER TABLE ai_alerts ADD COLUMN recommendation TEXT;`); } catch(e) {}
+  try { db.exec(`ALTER TABLE ai_alerts ADD COLUMN expert_response TEXT;`); } catch(e) {}
+  try { db.exec(`ALTER TABLE ai_alerts ADD COLUMN sop_step_id TEXT;`); } catch(e) {}
 
   seedSOPDefinitions();
   console.log('[AI-DB] Database initialized at', DB_PATH);

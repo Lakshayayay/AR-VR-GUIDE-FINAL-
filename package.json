@@ -3,7 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build": "cd temp_ui/technician && npm install && npm run build",
-    "dev": "cd temp_ui/technician && npm install && npm run dev"
+    "install:all": "npm install && cd ArGuide/server && npm install && cd ../ai-copilot && npm install && cd ../expert-dashboard && npm install && cd ../temp_ui/technician && npm install",
+    "dev:server": "cd ArGuide/server && node index.js",
+    "dev:ai": "cd ArGuide/ai-copilot && npm run dev",
+    "dev:expert": "cd ArGuide/expert-dashboard && npm run dev",
+    "dev:tech": "cd ArGuide/temp_ui/technician && npm run dev",
+    "dev": "echo 'Run individual services using dev:server, dev:ai, dev:expert, and dev:tech'"
   }
 }
