@@ -65,7 +65,8 @@ export default function PreDiagnosis() {
     setError(null);
     
     try {
-      const response = await fetch(`http://${window.location.hostname}:3001/api/pre-diagnose`, {
+      const baseUrl = import.meta.env.VITE_AI_COPILOT_URL || `http://${window.location.hostname}:3001`;
+      const response = await fetch(`${baseUrl}/api/pre-diagnose`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageData: photo })
