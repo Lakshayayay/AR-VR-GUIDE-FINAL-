@@ -3,14 +3,101 @@ import io from 'socket.io-client';
 import AICopilotPanel from './components/AICopilotPanel';
 
 const SESSION_ID = 'HAL-123';
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3000`;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('live');
   const [selectedSession, setSelectedSession] = useState('SES-20240418-001');
 
+  const [isOnCall, setIsOnCall] = useState(false);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [sessions, setSessions] = useState([
+    { id: 'SES-20240418-001', tech: 'Rajesh Kumar', location: 'Assembly Bay 3', expert: 'Dr. Mehta', date: '2026-04-18', duration: '14:23', annotations: 37, status: 'completed' },
+    { id: 'SES-20240417-008', tech: 'Anita Sharma', location: 'Engine Test Cell', expert: 'R. Iyer', date: '2026-04-17', duration: '28:45', annotations: 52, status: 'completed' },
+    { id: 'SES-20240417-007', tech: 'Vijay Singh', location: 'Hydraulics Lab', expert: 'Dr. Mehta', date: '2026-04-17', duration: '19:12', annotations: 41, status: 'completed' },
+    { id: 'SES-20240417-006', tech: 'Priya Patel', location: 'Avionics Shop', expert: 'S. Reddy', date: '2026-04-17', duration: '32:08', annotations: 68, status: 'completed' },
+    { id: 'SES-20240416-012', tech: 'Kumar Das', location: 'Assembly Bay 1', expert: 'Dr. Mehta', date: '2026-04-16', duration: '45:33', annotations: 89, status: 'completed' },
+    { id: 'SES-20240416-011', tech: 'Neha Gupta', location: 'Paint Shop', expert: 'R. Iyer', date: '2026-04-16', duration: '12:20', annotations: 24, status: 'failed' }
+  ]);
+  const socketRef = useRef<any>(null);
+
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    socketRef.current = io(SERVER_URL);
+    (window as any)._expertSocket = socketRef.current;
+    
+    socketRef.current.on('connect', () => {
+      console.log('Expert Dashboard connected to server');
+      setIsConnected(true);
+    });
+
+    socketRef.current.on('connect_error', (err: any) => {
+      console.error('Socket connection error:', err);
+      setIsConnected(false);
+    });
+
+    socketRef.current.on('disconnect', () => {
+      console.log('Expert Dashboard disconnected');
+      setIsConnected(false);
+    });
+
+    socketRef.current.on('incoming-call', (data: any) => {
+      console.log('Received incoming call:', data);
+      setIncomingCall(data);
+    });
+
+    socketRef.current.on('call-ended', (data: any) => {
+      console.log('Call ended:', data);
+      setIsOnCall(false);
+      const newSession = {
+        id: data?.sessionId || `SES-${new Date().getTime().toString().slice(-6)}`,
+        tech: data?.callerName || 'Unknown Technician',
+        location: 'Field',
+        expert: 'RK (You)',
+        date: new Date().toISOString().split('T')[0],
+        duration: 'Unknown',
+        annotations: 0,
+        status: 'completed'
+      };
+      setSessions(prev => [newSession, ...prev]);
+    });
+
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+    }
+  }, []);
+
+  const handleAcceptCall = () => {
+    setIsOnCall(true);
+    socketRef.current.emit('call-accepted', { to: incomingCall.callerSocketId, sessionId: incomingCall.sessionId });
+    setSelectedSession(incomingCall.sessionId);
+    setIncomingCall(null);
+    setActiveTab('live');
+  };
+
+  const handleDeclineCall = () => {
+    socketRef.current.emit('call-rejected', { to: incomingCall.callerSocketId });
+    setIncomingCall(null);
+  };
+
+  const handleEndCall = () => {
+    socketRef.current.emit('end-call', { sessionId: selectedSession, callerName: 'Unknown Technician' });
+    setIsOnCall(false);
+    setSessions(prev => [{
+      id: selectedSession,
+      tech: 'Technician',
+      location: 'Field',
+      expert: 'RK (You)',
+      date: new Date().toISOString().split('T')[0],
+      duration: 'Unknown',
+      annotations: 0,
+      status: 'completed'
+    }, ...prev]);
+  };
+
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground" style={{
+    <div className="h-screen flex flex-col bg-background text-foreground relative" style={{
       '--hal-blue': '#185FA5',
       '--video-bg': '#0d1621',
       '--status-online': '#10b981',
@@ -22,6 +109,22 @@ export default function App() {
       '--annotation-white': '#ffffff',
       '--detection-teal': '#5eead4'
     } as React.CSSProperties}>
+
+      {incomingCall && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-[#1e293b] p-8 rounded-2xl shadow-2xl text-center border border-slate-700 w-96 animate-in fade-in zoom-in duration-200">
+            <div className="w-20 h-20 rounded-full bg-[var(--hal-blue)]/20 mx-auto mb-4 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-[var(--hal-blue)] animate-pulse flex items-center justify-center text-white">📞</div>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Incoming Call</h2>
+            <p className="text-slate-300 mb-8">From: {incomingCall.callerName || 'Technician'}</p>
+            <div className="flex gap-4 justify-center">
+              <button onClick={handleDeclineCall} className="px-6 py-2 rounded-lg bg-red-500/20 border border-red-500/50 hover:bg-red-500/40 text-red-400 font-medium transition-colors">Decline</button>
+              <button onClick={handleAcceptCall} className="px-6 py-2 rounded-lg bg-green-500 hover:bg-green-600 text-white font-medium transition-colors">Accept</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Nav Bar */}
       <div className="h-12 border-b border-border flex items-center justify-between px-4">
@@ -36,8 +139,8 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-[var(--status-online)]"></div>
-            <span className="text-sm">Server Online</span>
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[var(--status-online)]' : 'bg-destructive animate-pulse'}`}></div>
+            <span className="text-sm">{isConnected ? 'Server Online' : 'Server Offline'}</span>
           </div>
           <div className="w-8 h-8 rounded-full bg-[var(--hal-blue)] text-white flex items-center justify-center text-xs font-medium">
             RK
@@ -67,11 +170,15 @@ export default function App() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {activeTab === 'live' && (
-          <LiveSession selectedSession={selectedSession} setSelectedSession={setSelectedSession} />
+          isOnCall ? (
+            <LiveSession selectedSession={selectedSession} setSelectedSession={setSelectedSession} onEndCall={handleEndCall} />
+          ) : (
+            <LandingPage sessions={sessions} />
+          )
         )}
-        {activeTab === 'history' && <SessionHistory />}
+        {activeTab === 'history' && <SessionHistory sessions={sessions} />}
         {activeTab === 'analytics' && <Analytics />}
         {activeTab === 'settings' && <Settings />}
       </div>
@@ -89,9 +196,10 @@ export default function App() {
   );
 }
 
-function LiveSession({ selectedSession, setSelectedSession }: {
+function LiveSession({ selectedSession, setSelectedSession, onEndCall }: {
   selectedSession: string;
   setSelectedSession: (id: string) => void;
+  onEndCall: () => void;
 }) {
   const [activeTool, setActiveTool] = useState('arrow');
   const [activeColor, setActiveColor] = useState('red');
@@ -137,7 +245,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
 
     socket.on('connect', () => {
       setConnectionStatus('Server Connected. Waiting for Technician...');
-      socket.emit('join-session', SESSION_ID);
+      socket.emit('join-session', selectedSession);
     });
 
     socket.on('clear-annotations', () => {
@@ -199,7 +307,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
       socket.disconnect();
       if (peerRef.current) peerRef.current.close();
     };
-  }, []);
+  }, [selectedSession]);
 
   const getHexColor = (colorName: any) => {
       const map = { 'red': '#ef4444', 'amber': '#f59e0b', 'teal': '#14b8a6', 'blue': '#185FA5', 'white': '#ffffff' };
@@ -429,8 +537,8 @@ function LiveSession({ selectedSession, setSelectedSession }: {
         </div>
 
         <div className="p-4 border-t border-sidebar-border">
-          <button className="w-full px-4 py-2 bg-[var(--hal-blue)] text-white rounded hover:opacity-90 transition-opacity">
-            New Session
+          <button onClick={onEndCall} className="w-full px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-500 rounded hover:bg-red-500/30 transition-colors">
+            End Session
           </button>
         </div>
       </div>
@@ -583,7 +691,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
       </div>
 
       {/* AI Co-Pilot Panel */}
-      <AICopilotPanel socket={socket} sessionId={SESSION_ID} />
+      <AICopilotPanel socket={socket} sessionId={selectedSession} />
 
       {/* Right Panel */}
       <div className="w-64 border-l border-border flex flex-col overflow-y-auto bg-card">
@@ -736,15 +844,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
   );
 }
 
-function SessionHistory() {
-  const sessions = [
-    { id: 'SES-20240418-001', tech: 'Rajesh Kumar', location: 'Assembly Bay 3', expert: 'Dr. Mehta', date: '2026-04-18', duration: '14:23', annotations: 37, status: 'completed' },
-    { id: 'SES-20240417-008', tech: 'Anita Sharma', location: 'Engine Test Cell', expert: 'R. Iyer', date: '2026-04-17', duration: '28:45', annotations: 52, status: 'completed' },
-    { id: 'SES-20240417-007', tech: 'Vijay Singh', location: 'Hydraulics Lab', expert: 'Dr. Mehta', date: '2026-04-17', duration: '19:12', annotations: 41, status: 'completed' },
-    { id: 'SES-20240417-006', tech: 'Priya Patel', location: 'Avionics Shop', expert: 'S. Reddy', date: '2026-04-17', duration: '32:08', annotations: 68, status: 'completed' },
-    { id: 'SES-20240416-012', tech: 'Kumar Das', location: 'Assembly Bay 1', expert: 'Dr. Mehta', date: '2026-04-16', duration: '45:33', annotations: 89, status: 'completed' },
-    { id: 'SES-20240416-011', tech: 'Neha Gupta', location: 'Paint Shop', expert: 'R. Iyer', date: '2026-04-16', duration: '12:20', annotations: 24, status: 'failed' }
-  ];
+function SessionHistory({ sessions }: { sessions: any[] }) {
 
   return (
     <div className="flex-1 flex flex-col p-6">
@@ -996,6 +1096,71 @@ function Settings() {
             <option value="5">5</option>
             <option value="10">10</option>
           </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LandingPage({ sessions }: { sessions: any[] }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center bg-[var(--video-bg)] text-foreground p-8">
+      <div className="w-24 h-24 rounded-full bg-[var(--hal-blue)]/10 flex items-center justify-center mb-6 relative">
+        <div className="w-16 h-16 rounded-full bg-[var(--hal-blue)]/20 animate-ping absolute"></div>
+        <div className="w-12 h-12 rounded-full bg-[var(--hal-blue)]/80 z-10 flex items-center justify-center text-white text-2xl">📡</div>
+      </div>
+      <h2 className="text-3xl font-bold mb-3 tracking-tight">Expert Dashboard Online</h2>
+      <p className="text-muted-foreground mb-4 text-lg">Waiting for incoming technician calls...</p>
+      
+      <div className="flex gap-4 mb-12">
+        <button 
+          onClick={() => {
+            const socket = (window as any)._expertSocket;
+            if (socket) {
+              console.log('Emitting test call...');
+              socket.emit('incoming-call', {
+                sessionId: 'TEST-' + Math.floor(Math.random()*1000),
+                callerName: 'Test Technician',
+                location: 'Diagnostic Lab'
+              });
+            } else {
+              alert('Socket not ready');
+            }
+          }}
+          className="px-6 py-2 bg-[var(--hal-blue)]/20 text-[var(--hal-blue)] rounded-full border border-[var(--hal-blue)]/30 hover:bg-[var(--hal-blue)]/30 transition-colors text-sm font-medium"
+        >
+          Diagnose Connection (Send Test Call)
+        </button>
+      </div>
+      
+      <div className="w-full max-w-3xl bg-card rounded-xl border border-border p-6 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-[var(--hal-blue)]"></div>
+        <h3 className="text-lg font-medium mb-6 flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-[var(--status-online)]"></div>
+          Recent Activity
+        </h3>
+        <div className="space-y-3">
+          {sessions.slice(0, 4).map(s => (
+             <div key={s.id} className="flex justify-between items-center p-4 rounded-lg bg-background/50 border border-border/50 hover:border-border transition-colors group cursor-default">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-medium text-muted-foreground">
+                    {s.tech.split(' ').map((n: string) => n[0]).join('')}
+                  </div>
+                  <div>
+                    <div className="font-medium">{s.tech}</div>
+                    <div className="text-xs text-muted-foreground font-mono mt-1">{s.id} • {s.date} • {s.location}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-xs font-mono text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                    {s.duration} min • {s.annotations} annotations
+                  </div>
+                  <div className="text-xs px-2.5 py-1 bg-[var(--status-online)]/10 text-[var(--status-online)] rounded-full font-medium tracking-wide">
+                    {s.status.toUpperCase()}
+                  </div>
+                </div>
+             </div>
+          ))}
         </div>
       </div>
     </div>

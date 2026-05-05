@@ -1,15 +1,21 @@
 import express from 'express';
+import cors from 'cors';
 import { createServer } from 'http';
 import { io as SocketClient } from 'socket.io-client';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { initDatabase, getDB } from './database.js';
-import { analyzeFrameForAnomalies, validateSOPStep, validateSessionSignOff } from './visionAnalyzer.js';
+import { analyzeFrameForAnomalies, validateSOPStep, validateSessionSignOff, analyzeLiveFrame } from './visionAnalyzer.js';
 import { profileSession, saveProfileAlerts } from './sessionProfiler.js';
 import { formatAlert, emitAlertToSession, emitSOPUpdate, emitSignOffResult } from './alertEmitter.js';
 
 dotenv.config();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'missing_key');
+const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' }, { apiVersion: 'v1beta' });
 
 const app = express();
+app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 const httpServer = createServer(app);
 const db = initDatabase();
@@ -62,6 +68,27 @@ edgeSocket.on('ai_frame_capture', async (data) => {
         Math.floor(Date.now() / 1000)
       );
     }
+
+    // Emit initial "System Ready" alerts for interactivity
+    setTimeout(() => {
+      const welcomeAlert = formatAlert({
+        type: 'system',
+        severity: 'low',
+        title: 'AI Monitor Online',
+        description: 'Real-time safety and quality monitoring has started. Analyzing frames at 10s intervals.',
+        confidence: 1.0
+      }, sessionId, 'system');
+      emitAlertToSession(edgeSocket, sessionId, welcomeAlert);
+      
+      const engineAlert = formatAlert({
+        type: 'system',
+        severity: 'low',
+        title: 'Vision Engine Active',
+        description: 'Using gemini-3.1-flash-lite-preview for autonomous SOP validation.',
+        confidence: 1.0
+      }, sessionId, 'system');
+      emitAlertToSession(edgeSocket, sessionId, engineAlert);
+    }, 1500);
   }
 
   runVisionAnalysis(sessionId, frameBase64, sessionContext);
@@ -249,6 +276,264 @@ app.get('/sessions/:id/sop-steps', (req, res) => {
 app.post('/sessions/:id/alerts/:alertId/acknowledge', (req, res) => {
   db.prepare('UPDATE ai_alerts SET acknowledged = 1 WHERE id = ?').run(req.params.alertId);
   res.json({ success: true });
+});
+
+// Helper: Analyze equipment image for pre-session diagnosis
+async function analyzeEquipmentImage(imageData, equipmentType = null) {
+  const systemPrompt = `You are an industrial equipment diagnostic AI assistant with expertise in hydraulic systems, electrical panels, engines, and manufacturing equipment.
+
+Analyze the provided image and identify:
+1. Equipment type and model (if visible)
+2. Failure mode or issue present
+3. Severity level: LOW (cosmetic), MEDIUM (performance degraded), HIGH (safety risk), CRITICAL (immediate danger)
+4. Root cause analysis
+5. Required replacement parts with realistic SKU-style codes and estimated costs
+6. Estimated repair time for a junior technician
+7. Recommendation: "SOLO_REPAIR" if straightforward replacement/adjustment, "CALL_EXPERT" if complex diagnosis needed or safety-critical
+8. Step-by-step repair instructions (5-8 steps maximum)
+
+Return ONLY valid JSON matching this exact schema (no markdown, no preamble):
+{
+  "equipmentType": "string",
+  "issue": "string",
+  "severity": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+  "confidence": 0.85,
+  "partsNeeded": [
+    { "name": "string", "sku": "string", "estimatedCost": 12.99 }
+  ],
+  "estimatedRepairTime": "15-20 minutes",
+  "recommendation": "SOLO_REPAIR" | "CALL_EXPERT",
+  "repairSteps": [
+    "1. Step one",
+    "2. Step two"
+  ],
+  "reasoning": "Brief explanation of diagnosis"
+}
+
+If you cannot confidently diagnose from the image (blurry, wrong angle, equipment not visible), return:
+{ "error": "Unable to analyze - please retake photo with equipment clearly visible" }`;
+
+  try {
+    const base64Image = imageData.includes('base64,') 
+      ? imageData.split('base64,')[1] 
+      : imageData;
+
+    const result = await model.generateContent([
+      systemPrompt,
+      {
+        inlineData: {
+          data: base64Image,
+          mimeType: 'image/jpeg'
+        }
+      }
+    ]);
+
+    const textResponse = result.response.text().trim();
+    
+    // Remove markdown code blocks if present
+    const cleanedResponse = textResponse
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    
+    const diagnosis = JSON.parse(cleanedResponse);
+    
+    // Check for error response
+    if (diagnosis.error) {
+      throw new Error(diagnosis.error);
+    }
+
+    // Validate minimum confidence threshold
+    if (diagnosis.confidence < 0.65) {
+      return {
+        error: "Low confidence diagnosis - image quality insufficient or equipment unclear"
+      };
+    }
+    
+    return diagnosis;
+
+  } catch (error) {
+    console.error('Equipment analysis error:', error);
+    throw error;
+  }
+}
+
+// Pre-Session Diagnostics Endpoint
+app.post('/api/pre-diagnose', async (req, res) => {
+  try {
+    const { imageData, equipmentType } = req.body;
+    
+    // Validate input
+    if (!imageData) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No image data provided' 
+      });
+    }
+
+    console.log('[Pre-Diagnose] Analyzing equipment image...');
+    
+    // Call Gemini Vision API
+    const diagnosis = await analyzeEquipmentImage(imageData, equipmentType);
+    
+    // Check for error response from AI
+    if (diagnosis.error) {
+      return res.json({ 
+        success: false, 
+        error: diagnosis.error 
+      });
+    }
+
+    // Generate hash of image for deduplication
+    const imageHash = crypto
+      .createHash('md5')
+      .update(imageData)
+      .digest('hex');
+
+    // Save to database
+    db.prepare(`
+      INSERT INTO pre_diagnostics 
+      (image_hash, equipment_type, issue, severity, confidence, 
+       parts_needed, recommendation, repair_steps, reasoning, 
+       timestamp, technician_action)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      imageHash,
+      diagnosis.equipmentType || 'Unknown',
+      diagnosis.issue,
+      diagnosis.severity,
+      diagnosis.confidence,
+      JSON.stringify(diagnosis.partsNeeded),
+      diagnosis.recommendation,
+      JSON.stringify(diagnosis.repairSteps),
+      diagnosis.reasoning,
+      new Date().toISOString(),
+      null // technician_action filled later when they choose action
+    );
+
+    console.log('[Pre-Diagnose] Success:', {
+      equipment: diagnosis.equipmentType,
+      severity: diagnosis.severity,
+      recommendation: diagnosis.recommendation
+    });
+
+    res.json({ 
+      success: true, 
+      diagnosis 
+    });
+    
+  } catch (error) {
+    console.error('[Pre-Diagnose] Error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to analyze image'
+    });
+  }
+});
+
+// Optional: Endpoint to update technician action after diagnosis
+app.post('/api/pre-diagnose/:id/action', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body; // "accepted_solo" | "called_expert" | "dismissed"
+    
+    db.prepare(`
+      UPDATE pre_diagnostics 
+      SET technician_action = ? 
+      WHERE id = ?
+    `).run(action, id);
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// LIVE SESSION REAL-TIME ANALYSIS ENDPOINT
+app.post('/api/analyze-live', async (req, res) => {
+  try {
+    const { sessionId, frameData, activeSopId, timestamp } = req.body;
+    if (!frameData) return res.status(400).json({ success: false, error: 'No frame data' });
+
+    // Look up SOP step if activeSopId is provided
+    let stepData = null;
+    if (activeSopId) {
+      const sopDef = db.prepare('SELECT * FROM sop_definitions WHERE id = ?').get(activeSopId);
+      if (sopDef) {
+        const steps = JSON.parse(sopDef.steps);
+        const session = db.prepare('SELECT steps_completed FROM sessions WHERE id = ?').get(sessionId);
+        const currentStepNum = (session?.steps_completed || 0) + 1;
+        stepData = steps.find(s => s.number === currentStepNum);
+      }
+    }
+
+    const result = await analyzeLiveFrame(frameData, activeSopId, stepData);
+
+    if (result.issuesFound && result.findings && result.findings.length > 0) {
+      for (const finding of result.findings) {
+        if (finding.confidence > 0.70) {
+          const alert = {
+            id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            sessionId,
+            timestamp: timestamp || new Date().toISOString(),
+            type: finding.type,
+            severity: finding.severity,
+            finding: finding.finding,
+            confidence: finding.confidence,
+            recommendation: finding.recommendation,
+            sopStepId: stepData ? stepData.number.toString() : null,
+            expert_response: null
+          };
+
+          // Save to database
+          try {
+            db.prepare(`
+              INSERT INTO ai_alerts (session_id, alert_type, severity, title, description, confidence, frame_timestamp, recommendation, sop_step_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              sessionId, 
+              alert.type, 
+              alert.severity, 
+              'Live Alert', 
+              alert.finding, 
+              alert.confidence, 
+              Date.now(), 
+              alert.recommendation, 
+              alert.sopStepId
+            );
+          } catch(e) {
+             console.error('[AI-CoPilot] Alert DB insert failed:', e.message);
+          }
+
+          // Broadcast via socket to edge server
+          edgeSocket.emit('broadcast-ai-alert', { sessionId, alert });
+        }
+      }
+      return res.json({ success: true, issuesFound: true });
+    }
+
+    return res.json({ success: true, noIssues: true });
+  } catch (error) {
+    console.error('[AI-CoPilot] /api/analyze-live error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ALERT ACTION LOGGING ENDPOINT
+app.post('/api/alert-action', (req, res) => {
+  try {
+    const { alertId, action, sessionId } = req.body;
+    db.prepare(`
+      UPDATE ai_alerts 
+      SET expert_response = ?, response_timestamp = ?, acknowledged = ?
+      WHERE id = ? OR description = ?
+    `).run(action, new Date().toISOString(), action === 'acknowledged' ? 1 : 0, alertId, alertId);
+    // Since we generate random IDs, we might fallback to checking description or just log
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[AI-CoPilot] Alert action update error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 const PORT = process.env.PORT || process.env.AI_SERVICE_PORT || 3001;

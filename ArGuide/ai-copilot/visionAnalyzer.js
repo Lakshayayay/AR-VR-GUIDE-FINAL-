@@ -3,9 +3,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'missing_key');
-const MODEL = 'gemini-2.5-flash-lite';
-const model = genAI.getGenerativeModel({ model: MODEL }, { apiVersion: 'v1' });
-const textModel = genAI.getGenerativeModel({ model: MODEL }, { apiVersion: 'v1' });
+const MODEL = 'gemini-3.1-flash-lite-preview';
+const model = genAI.getGenerativeModel({ model: MODEL }, { apiVersion: 'v1beta' });
+const textModel = genAI.getGenerativeModel({ model: MODEL }, { apiVersion: 'v1beta' });
 
 // Shared rate-limit cooldown — pauses all analysis if quota is hit
 let rateLimitedUntil = 0;
@@ -159,3 +159,81 @@ Respond ONLY in this exact JSON format:
     return { sign_off_recommended: false, confidence: 0, risk_level: 'high', blockers: ['Unable to validate'], warnings: [], summary: 'Validation service unavailable' };
   }
 }
+
+// --- LIVE SESSION ANALYSIS ---
+export async function analyzeLiveFrame(base64ImageData, activeSopId, stepData = null) {
+  let prompt = `You are an industrial safety and quality AI monitoring a live maintenance session.
+
+Analyze this video frame and identify:
+
+SAFETY VIOLATIONS (Priority 1):
+- Missing PPE: hard hat, safety glasses, gloves, hearing protection
+- Electrical hazards: exposed wiring, improper grounding, arc flash zones
+- Fire risks: flammable materials near heat, improper storage
+- Fall hazards: unguarded heights, unstable ladders, missing harnesses
+- Pinch points: hands near moving parts
+
+EQUIPMENT ANOMALIES (Priority 2):
+- Structural damage: cracks, fractures, deformation, corrosion
+- Fluid issues: leaks, stains, contamination
+- Mechanical problems: loose bolts, missing fasteners, misalignment, wear
+
+Return ONLY valid JSON:
+{
+  "issuesFound": true/false,
+  "findings": [
+    {
+      "type": "SAFETY" | "ANOMALY",
+      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      "finding": "Brief description",
+      "confidence": 0.85,
+      "recommendation": "What to do about it"
+    }
+  ]
+}
+
+If no issues detected, return: { "issuesFound": false }
+
+Severity guidelines:
+- CRITICAL: Immediate danger to life (exposed high voltage, person in danger zone)
+- HIGH: Serious safety risk (missing critical PPE, significant structural damage)
+- MEDIUM: Procedure violation or moderate risk (wrong tool, minor leak)
+- LOW: Best practice deviation (untidy workspace, minor wear)`;
+
+  if (activeSopId && stepData) {
+    prompt += `
+
+CURRENT SOP STEP VALIDATION:
+The technician is following procedure step: ${stepData.name}
+
+Visual confirmation required: ${stepData.visual_check || 'Verify step is completed correctly'}
+
+Has this step been completed correctly? Return additional finding if step not validated.`;
+  }
+
+  if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY_HERE') {
+    return { issuesFound: false, findings: [] };
+  }
+
+  try {
+    const cleanBase64 = base64ImageData.includes('base64,') ? base64ImageData.split('base64,')[1] : base64ImageData;
+    
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: cleanBase64,
+          mimeType: 'image/jpeg'
+        }
+      }
+    ]);
+
+    const text = result.response.text().trim();
+    const cleaned = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('[VisionAnalyzer] Live analysis failed:', err.message);
+    return { issuesFound: false, findings: [] };
+  }
+}
+

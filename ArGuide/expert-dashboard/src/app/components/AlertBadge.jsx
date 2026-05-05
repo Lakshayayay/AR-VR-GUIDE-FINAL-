@@ -5,7 +5,7 @@ const SEVERITY_COLORS = {
   low:      { bg: '#0a0a1a', border: '#2563eb', text: '#60a5fa', badge: '#2563eb' }
 };
 
-export default function AlertBadge({ alert, onAcknowledge }) {
+export default function AlertBadge({ alert, onAcknowledge, onDismiss }) {
   const colors = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS.low;
   const time = new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -31,22 +31,37 @@ export default function AlertBadge({ alert, onAcknowledge }) {
             <span style={{ color: '#475569', fontSize: '10px' }}>{time}</span>
           </div>
           <div style={{ color: colors.text, fontSize: '12px', fontWeight: 600 }}>{alert.title}</div>
-          <div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px', lineHeight: 1.4 }}>{alert.description}</div>
+          <div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px', lineHeight: 1.4 }}>{alert.description || alert.finding}</div>
+          {alert.recommendation && (
+            <div style={{ color: '#4ade80', fontSize: '11px', marginTop: '3px', lineHeight: 1.4 }}>💡 {alert.recommendation}</div>
+          )}
           <div style={{ color: '#334155', fontSize: '10px', marginTop: '4px' }}>
             Confidence: {Math.round((alert.confidence || 0) * 100)}%
           </div>
         </div>
         {!alert.acknowledged && (
-          <button
-            onClick={() => onAcknowledge(alert.id)}
-            style={{
-              background: 'transparent', border: '1px solid #334155',
-              borderRadius: '4px', color: '#64748b', fontSize: '10px',
-              padding: '3px 7px', cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
-            }}
-          >
-            ACK
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: '8px' }}>
+            <button
+              onClick={() => onAcknowledge(alert.id)}
+              style={{
+                background: 'transparent', border: '1px solid #334155',
+                borderRadius: '4px', color: '#64748b', fontSize: '10px',
+                padding: '3px 7px', cursor: 'pointer', whiteSpace: 'nowrap'
+              }}
+            >
+              ✓ ACK
+            </button>
+            <button
+              onClick={() => onDismiss && onDismiss(alert.id)}
+              style={{
+                background: 'transparent', border: '1px solid #334155',
+                borderRadius: '4px', color: '#64748b', fontSize: '10px',
+                padding: '3px 7px', cursor: 'pointer', whiteSpace: 'nowrap'
+              }}
+            >
+              ✗ DISMISS
+            </button>
+          </div>
         )}
       </div>
     </div>
