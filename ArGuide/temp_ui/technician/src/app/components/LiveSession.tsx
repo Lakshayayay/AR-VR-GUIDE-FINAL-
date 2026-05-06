@@ -377,6 +377,8 @@ export default function LiveSession() {
          // Join expert-room FIRST so Expert Dashboard gets user-joined event (works with existing server, no redeploy needed)
          socket.emit('join-session', 'expert-room');
          socket.emit('join-session', sessionId);
+         // Also join a room named after our socket ID, so Expert's fallback flow can reach us
+         socket.emit('join-session', `session-${socket.id}`);
          initCamera();
        });
 
@@ -629,7 +631,7 @@ export default function LiveSession() {
           if (maxX - minX > 0.25) { // Increased threshold for stability
              console.log('Wave detected! Clearing annotations.');
              if ((window as any).clearAnnotations) (window as any).clearAnnotations();
-             socketRef.current?.emit('clear-annotations', { sessionId: 'HAL-123' });
+             socketRef.current?.emit('clear-annotations', { sessionId });
              lastClearTime.current = now;
           }
         }
@@ -651,7 +653,7 @@ export default function LiveSession() {
             const h = canvasRef.current.height;
             // Draw locally immediately
             const annotationData = {
-              sessionId: 'HAL-123',
+              sessionId: sessionId,
               tool: 'freehand',
               x1: lastHandPos.current.x * w,
               y1: lastHandPos.current.y * h,
@@ -668,7 +670,7 @@ export default function LiveSession() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                sessionId: 'HAL-123',
+                sessionId: sessionId,
                 frameData: null,
                 activeSopId: null,
                 timestamp: new Date().toISOString()
@@ -820,7 +822,7 @@ export default function LiveSession() {
         <button onClick={() => setIsFreezed(!isFreezed)} className="px-3 py-2 bg-[#5DCAA5] rounded text-xs text-black font-medium">{isFreezed ? 'Unfreeze' : 'Freeze'}</button>
         <button onClick={() => {
             if ((window as any).clearAnnotations) (window as any).clearAnnotations();
-            socketRef.current?.emit('clear-annotations', { sessionId: 'HAL-123' });
+            socketRef.current?.emit('clear-annotations', { sessionId });
         }} className="px-3 py-2 bg-red-500 rounded text-xs text-white font-medium">Clear 3D</button>
       </div>
     </div>

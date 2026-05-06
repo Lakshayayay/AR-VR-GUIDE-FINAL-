@@ -638,7 +638,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
     if (isLaserOn && socketRef.current) {
         const pos = getCanvasPos(e);
         socketRef.current.emit('laser_update', {
-            sessionId: SESSION_ID,
+            sessionId: selectedSession,
             x: pos.x,
             y: pos.y,
             canvasW: canvasRef.current.width,
@@ -660,7 +660,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
       // Freehand or Line
       if (socketRef.current) {
         socketRef.current.emit('annotation', {
-          sessionId: SESSION_ID,
+          sessionId: selectedSession,
           tool: activeTool,
           x1: lastPos.current.x,
           y1: lastPos.current.y,
@@ -760,7 +760,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
       // Emit annotation (freehand/line already emitted during drawing)
       if (['rectangle', 'circle', 'arrow'].includes(activeTool) && socketRef.current) {
         socketRef.current.emit('annotation', {
-          sessionId: SESSION_ID,
+          sessionId: selectedSession,
           ...data
         });
       }
@@ -777,7 +777,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
         else videoRef.current.play();
     }
     if (socketRef.current) {
-        socketRef.current.emit('freeze_session', { sessionId: SESSION_ID, frozen: newState });
+        socketRef.current.emit('freeze_session', { sessionId: selectedSession, frozen: newState });
     }
   };
 
@@ -812,7 +812,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
         annotationGroupRef.current.position.set(0, 0, 0);
      }
      trackerStateRef.current.active = false;
-     if(socketRef.current) socketRef.current.emit('clear-annotations', { sessionId: SESSION_ID });
+     if(socketRef.current) socketRef.current.emit('clear-annotations', { sessionId: selectedSession });
   };
 
   return (
@@ -1008,7 +1008,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
       </div>
 
       {/* AI Co-Pilot Panel */}
-      <AICopilotPanel socket={socket} sessionId={SESSION_ID} />
+      <AICopilotPanel socket={socket} sessionId={selectedSession} />
 
       {/* Right Panel */}
       <div className="w-64 border-l border-border flex flex-col overflow-y-auto bg-card">
