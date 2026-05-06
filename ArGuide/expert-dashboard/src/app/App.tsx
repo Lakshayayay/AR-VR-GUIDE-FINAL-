@@ -373,27 +373,77 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
     };
 
     const handleAnnotation = (data: any) => {
-      console.log('Expert received annotation from technician:', data.tool);
+      console.log('Expert received annotation:', data.tool, data.fromHand ? '(hand)' : '(expert)');
+      
+      // Render ALL annotations (including hand-drawn from technician) as 3D meshes
+      if (sceneRef.current && cameraRef.current && annotationGroupRef.current) {
+        const nx1 = (data.x1 / data.canvasW) * 2 - 1;
+        const ny1 = -(data.y1 / data.canvasH) * 2 + 1;
+        const nx2 = (data.x2 / data.canvasW) * 2 - 1;
+        const ny2 = -(data.y2 / data.canvasH) * 2 + 1;
+
+        const vec1 = new THREE.Vector3(nx1, ny1, 0.5).unproject(cameraRef.current);
+        const vec2 = new THREE.Vector3(nx2, ny2, 0.5).unproject(cameraRef.current);
+        
+        const material = new THREE.MeshBasicMaterial({ 
+          color: data.color || '#00ff00',
+          transparent: true,
+          opacity: 0.8
+        });
+        
+        let mesh: THREE.Object3D;
+        const lineThickness = data.fromHand ? 0.003 : 0.005;
+
+        if (data.tool === 'rectangle') {
+          const group = new THREE.Group();
+          const p1 = vec1.clone();
+          const p2 = new THREE.Vector3(vec2.x, vec1.y, vec1.z);
+          const p3 = vec2.clone();
+          const p4 = new THREE.Vector3(vec1.x, vec2.y, vec1.z);
+          [[p1, p2], [p2, p3], [p3, p4], [p4, p1]].forEach(([v1, v2]) => {
+            const path = new THREE.LineCurve3(v1, v2);
+            group.add(new THREE.Mesh(new THREE.TubeGeometry(path, 1, lineThickness, 8, false), material));
+          });
+          mesh = group;
+        } else if (data.tool === 'circle') {
+          const radius = vec1.distanceTo(vec2);
+          mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, lineThickness, 8, 50), material);
+          mesh.position.copy(vec1);
+          mesh.lookAt(cameraRef.current.position);
+        } else if (data.tool === 'arrow') {
+          const group = new THREE.Group();
+          group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(vec1, vec2), 1, lineThickness, 8, false), material));
+          const dir = new THREE.Vector3().subVectors(vec2, vec1).normalize();
+          const head = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 8), material);
+          head.position.copy(vec2);
+          head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+          group.add(head);
+          mesh = group;
+        } else {
+          // freehand / line - render as 3D tube
+          mesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(vec1, vec2), 8, lineThickness, 8, false), material);
+        }
+
+        (mesh as any).userData.isAnnotation = true;
+        mesh.position.x -= annotationGroupRef.current.position.x;
+        mesh.position.y -= annotationGroupRef.current.position.y;
+        annotationGroupRef.current.add(mesh);
+      }
+
+      // Also draw on 2D preview canvas for immediate feedback
       if (previewCanvasRef.current) {
         const pCtx = previewCanvasRef.current.getContext('2d');
         if (!pCtx) return;
 
         pCtx.strokeStyle = data.color || '#00ff00';
-        pCtx.lineWidth = 3;
+        pCtx.lineWidth = data.fromHand ? 2 : 3;
         pCtx.lineCap = 'round';
         pCtx.lineJoin = 'round';
 
-        if (data.tool === 'freehand' || data.tool === 'line') {
-          pCtx.beginPath();
-          pCtx.moveTo(data.x1, data.y1);
-          pCtx.lineTo(data.x2, data.y2);
-          pCtx.stroke();
-        } else {
-           pCtx.beginPath();
-           pCtx.moveTo(data.x1, data.y1);
-           pCtx.lineTo(data.x2, data.y2);
-           pCtx.stroke();
-        }
+        pCtx.beginPath();
+        pCtx.moveTo(data.x1, data.y1);
+        pCtx.lineTo(data.x2, data.y2);
+        pCtx.stroke();
       }
     };
 

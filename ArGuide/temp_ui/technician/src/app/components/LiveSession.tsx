@@ -29,6 +29,7 @@ export default function LiveSession() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [latency, setLatency] = useState(42);
   const [isFreezed, setIsFreezed] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
   const [showConnectionLost, setShowConnectionLost] = useState(false);
   const [laserPosition, setLaserPosition] = useState({ x: 50, y: 50 });
   const [isHandPinching, setIsHandPinching] = useState(false);
@@ -795,6 +796,18 @@ export default function LiveSession() {
         <div className="flex items-center justify-between gap-6">
           <button onClick={() => setIsMuted(!isMuted)} className={`w-12 h-12 rounded-full flex items-center justify-center ${isMuted ? 'bg-red-500' : 'bg-white/10'}`}>
             {isMuted ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
+          </button>
+          <button 
+            onClick={() => {
+              const newState = !isCameraOff;
+              setIsCameraOff(newState);
+              if (localStreamRef.current) {
+                localStreamRef.current.getVideoTracks().forEach(track => { track.enabled = !newState; });
+              }
+            }} 
+            className={`w-12 h-12 rounded-full flex items-center justify-center ${isCameraOff ? 'bg-red-500' : 'bg-white/10'}`}
+          >
+            {isCameraOff ? <VideoOff className="w-5 h-5 text-white" /> : <Video className="w-5 h-5 text-white" />}
           </button>
           <button onClick={flipCamera} className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center">
             <CameraIcon className="w-6 h-6 text-white" />
