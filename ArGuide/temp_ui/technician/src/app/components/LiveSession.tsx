@@ -190,7 +190,6 @@ export default function LiveSession() {
         return videoStream;
       }
      })();
-     })();
      await streamPromiseRef.current;
      if (socketRef.current) {
        socketRef.current.emit('call-expert', { sessionId, techName: 'Field Technician' });
@@ -376,6 +375,10 @@ export default function LiveSession() {
          setConnectionStatus('Connected to Server');
          initCamera();
          socket.emit('join-session', 'HAL-123');
+       });
+
+       socket.on('call-accepted', () => {
+         setCallStatus('connected');
        });
        
        socket.on('user-joined', async (expertId: string) => {
