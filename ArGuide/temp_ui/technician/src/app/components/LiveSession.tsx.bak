@@ -6,23 +6,16 @@ import {
   Flashlight,
   FlashlightOff,
   PhoneOff,
-  WifiOff,
-  Bot,
-  Video,
-  VideoOff
+  WifiOff
 } from 'lucide-react';
 import io from 'socket.io-client';
-import { useLocation, useNavigate } from 'react-router-dom';
 import * as THREE from 'three';
-import AIWarningBanner from './AIWarningBanner';
+import AIWarningBanner from './components/AIWarningBanner';
 import { Hands, HAND_CONNECTIONS, Results } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 import { Camera } from '@mediapipe/camera_utils';
 
-export default function LiveSession() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const sessionId = location.state?.sessionId || 'HAL-123';
+export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -363,7 +356,7 @@ export default function LiveSession() {
       window.addEventListener('resize', handleResize);
       handleResize();
 
-       const socket = io(import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3000`);
+       const socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3000');
        socketRef.current = socket;
        setSocket(socket);
        
@@ -646,18 +639,6 @@ export default function LiveSession() {
               canvasH: h,
               fromHand: true
             };
-            
-            const baseUrl = import.meta.env.VITE_AI_COPILOT_URL || `http://${window.location.hostname}:3001`;
-            fetch(`${baseUrl}/api/analyze-live`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                sessionId: 'HAL-123',
-                frameData: null,
-                activeSopId: null,
-                timestamp: new Date().toISOString()
-              })
-            }).catch(err => console.log('Capture error:', err));
             
             if ((window as any).addAnnotation) {
                 (window as any).addAnnotation(annotationData);
