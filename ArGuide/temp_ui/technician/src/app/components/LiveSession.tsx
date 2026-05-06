@@ -367,7 +367,7 @@ export default function LiveSession() {
       window.addEventListener('resize', handleResize);
       handleResize();
 
-       const socket = io(import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3000`);
+       const socket = io('https://ar-vr-guide-final.onrender.com');
        socketRef.current = socket;
        setSocket(socket);
        

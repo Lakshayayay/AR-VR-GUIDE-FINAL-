@@ -5,7 +5,7 @@ import { Video } from 'lucide-react';
 import AICopilotPanel from './components/AICopilotPanel';
 
 const SESSION_ID = 'HAL-123';
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+const SERVER_URL = 'https://ar-vr-guide-final.onrender.com';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('history'); // Default to history
