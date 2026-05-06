@@ -153,7 +153,7 @@ export default function LiveSession() {
           socketRef.current.emit('signal', { to: 'expert', signal: { type: 'offer', sdp: offer.sdp }}); // Simplified 'to' for this context
         }
 
-        if (socketRef.current) socketRef.current.emit('join-session', 'HAL-123');
+        if (socketRef.current) socketRef.current.emit('join-session', sessionId);
         setConnectionStatus('Connected & Audio Active');
         return stream;
       } catch (err: any) {
@@ -186,7 +186,7 @@ export default function LiveSession() {
         localStreamRef.current = videoStream;
         (window as any).localStream = videoStream;
         if (videoRef.current) videoRef.current.srcObject = videoStream;
-        if (socketRef.current) socketRef.current.emit('join-session', 'HAL-123');
+        if (socketRef.current) socketRef.current.emit('join-session', sessionId);
         return videoStream;
       }
      })();
@@ -334,7 +334,7 @@ export default function LiveSession() {
             
             if (socketRef.current) {
                 socketRef.current.emit('tracking_update', {
-                    sessionId: 'HAL-123',
+                    sessionId: sessionId,
                     dx: dxPixels,
                     dy: dyPixels,
                     canvasW: 400,
@@ -374,7 +374,7 @@ export default function LiveSession() {
        socket.on('connect', () => {
          setConnectionStatus('Connected to Server');
          initCamera();
-         socket.emit('join-session', 'HAL-123');
+         socket.emit('join-session', sessionId);
        });
 
        socket.on('call-accepted', () => {

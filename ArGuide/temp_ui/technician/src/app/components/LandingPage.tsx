@@ -18,32 +18,7 @@ export default function LandingPage() {
   }, []);
 
   const handleCallExpert = () => {
-    setIsCalling(true);
-    socketRef.current = io(SERVER_URL);
-    
-    socketRef.current.on('connect', () => {
-      console.log('Connected to server, sending call...');
-      socketRef.current.emit('incoming-call', {
-        sessionId,
-        callerName: 'Technician',
-        location: 'Field'
-      });
-    });
-
-    socketRef.current.on('connect_error', (err: any) => {
-      console.error('Technician socket connection error:', err);
-    });
-
-    socketRef.current.on('call-accepted', (data: any) => {
-      socketRef.current.disconnect();
-      navigate('/live-session', { state: { sessionId } });
-    });
-
-    socketRef.current.on('call-rejected', () => {
-      setIsCalling(false);
-      socketRef.current.disconnect();
-      alert('Expert declined the call.');
-    });
+    navigate('/live-session', { state: { sessionId } });
   };
 
   const cancelCall = () => {
