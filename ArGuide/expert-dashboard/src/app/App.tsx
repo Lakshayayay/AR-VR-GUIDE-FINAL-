@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import * as THREE from 'three';
+import { Video } from 'lucide-react';
 import AICopilotPanel from './components/AICopilotPanel';
 
 const SESSION_ID = 'HAL-123';
@@ -209,6 +210,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
   const [speakerEnabled, setSpeakerEnabled] = useState(true);
   const [volume, setVolume] = useState(75);
   const [isLaserOn, setIsLaserOn] = useState(false);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [sessionTime, setSessionTime] = useState(0);
 
   const videoRef = useRef(null);
