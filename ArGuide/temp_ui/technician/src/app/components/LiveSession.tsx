@@ -373,8 +373,10 @@ export default function LiveSession() {
        
        socket.on('connect', () => {
          setConnectionStatus('Connected to Server');
-         initCamera();
+         // Join expert-room FIRST so Expert Dashboard gets user-joined event (works with existing server, no redeploy needed)
+         socket.emit('join-session', 'expert-room');
          socket.emit('join-session', sessionId);
+         initCamera();
        });
 
        socket.on('call-accepted', () => {
@@ -386,6 +388,11 @@ export default function LiveSession() {
        });
 
        socket.on('signal', async (data: any) => {
+          // Handle call-accepted signal from Expert (fallback for existing server)
+          if (data.signal.type === 'call-accepted') {
+            setCallStatus('connected');
+            return;
+          }
           if (data.signal.type === 'request-offer') {
              if (peerRef.current) peerRef.current.close();
              await setupPeer(data.from);

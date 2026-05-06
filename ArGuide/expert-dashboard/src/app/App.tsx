@@ -16,6 +16,24 @@ export default function App() {
   const [incomingCall, setIncomingCall] = useState<any>(null);
   const [callAccepted, setCallAccepted] = useState(false);
   const socketRef = useRef<any>(null);
+  const incomingCallRef = useRef<any>(null); // ref to avoid stale closure in socket listeners
+
+  // Keep ref in sync with state
+  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
+
+  const playRing = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.play().catch(() => {
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          osc.connect(ctx.destination);
+          osc.start(); osc.stop(ctx.currentTime + 0.5);
+        } catch(e) {}
+      });
+    } catch(e) {}
+  };
 
   // Initialize socket at the App level to listen for calls globally
   useEffect(() => {
@@ -23,26 +41,30 @@ export default function App() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('Expert connected to server');
-      // Join a generic expert room to receive calls
+      console.log('Expert connected to server:', socket.id);
       socket.emit('join-session', 'expert-room');
     });
 
+    // PRIMARY: call-expert event (requires Render server redeploy)
     socket.on('call-expert', (data: any) => {
-      console.log('Incoming call from:', data.techName);
-      setIncomingCall(data);
-      // Play a ringing sound
-      try {
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-        audio.play().catch(() => {
-          // Fallback beep
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const osc = ctx.createOscillator();
-          osc.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.5);
+      console.log('[Expert] Incoming call via call-expert:', data.techName);
+      if (!incomingCallRef.current) {
+        setIncomingCall(data);
+        playRing();
+      }
+    });
+
+    // FALLBACK: user-joined fires when Technician joins 'expert-room' (works with existing server NOW)
+    socket.on('user-joined', (techSocketId: string) => {
+      console.log('[Expert] Technician joined expert-room, socket ID:', techSocketId);
+      if (!incomingCallRef.current) {
+        setIncomingCall({
+          techName: 'Field Technician',
+          sessionId: `session-${techSocketId}`,
+          from: techSocketId
         });
-      } catch(e) {}
+        playRing();
+      }
     });
 
     return () => {
@@ -54,12 +76,32 @@ export default function App() {
     setCallAccepted(true);
     setActiveTab('live');
     if (socketRef.current && incomingCall) {
-      socketRef.current.emit('call-accepted', { 
-        sessionId: incomingCall.sessionId,
-        expertSocketId: socketRef.current.id 
+      const sessionRoom = incomingCall.sessionId || 'HAL-123';
+      const techSocketId = incomingCall.from;
+
+      // Store tech socket ID on socket object so LiveSession can access it
+      if (techSocketId) {
+        socketRef.current._techFrom = techSocketId;
+      }
+
+      // Join the shared session room so WebRTC can connect
+      socketRef.current.emit('join-session', sessionRoom);
+
+      // Signal the Technician directly via the existing 'signal' route (no server redeploy needed)
+      if (techSocketId) {
+        socketRef.current.emit('signal', {
+          to: techSocketId,
+          signal: { type: 'call-accepted' }
+        });
+      }
+
+      // Also emit call-accepted event (works if Render server is redeployed)
+      socketRef.current.emit('call-accepted', {
+        sessionId: sessionRoom,
+        expertSocketId: socketRef.current.id
       });
-      // The session ID might be dynamic now based on the call
-      setSelectedSession(incomingCall.sessionId || 'HAL-123');
+
+      setSelectedSession(sessionRoom);
     }
   };
 
@@ -288,6 +330,16 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
 
     setConnectionStatus('Server Connected. Waiting for Technician stream...');
     socket.emit('join-session', selectedSession);
+
+    // Immediately request offer from the Technician if we know their socket ID
+    // (the 'from' field is set when call was routed via user-joined)
+    const techFrom = (globalSocket as any)._techFrom;
+    if (techFrom) {
+      setTimeout(() => {
+        setConnectionStatus('Requesting stream from Technician...');
+        socket.emit('signal', { to: techFrom, signal: { type: 'request-offer' } });
+      }, 1000);
+    }
     
     // Capture local audio to send to technician
     streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
