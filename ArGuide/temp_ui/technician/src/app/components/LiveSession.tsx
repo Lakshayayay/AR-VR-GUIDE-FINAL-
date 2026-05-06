@@ -41,7 +41,8 @@ export default function LiveSession() {
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState('Connecting...');
+  const [connectionStatus, setConnectionStatus] = useState('Initializing...');
+  const [callStatus, setCallStatus] = useState<'ringing' | 'connected' | 'ended'>('ringing');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [socket, setSocket] = useState<any>(null);
   const [isLaserActive, setIsLaserActive] = useState(false);
@@ -189,7 +190,11 @@ export default function LiveSession() {
         return videoStream;
       }
      })();
+     })();
      await streamPromiseRef.current;
+     if (socketRef.current) {
+       socketRef.current.emit('call-expert', { sessionId, techName: 'Field Technician' });
+     }
   };
 
   useEffect(() => {
@@ -716,7 +721,29 @@ export default function LiveSession() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden">
+    <div className="relative w-full h-screen bg-black overflow-hidden font-sans">
+      {/* Ringing UI */}
+      {callStatus === 'ringing' && (
+        <div className="absolute inset-0 z-[100] bg-[#111] flex flex-col items-center justify-center">
+          <div className="relative mb-12">
+            <div className="absolute inset-0 bg-[#5DCAA5] rounded-full animate-ping opacity-20 scale-[2.5]" />
+            <div className="absolute inset-0 bg-[#5DCAA5] rounded-full animate-ping opacity-40 scale-[1.8] delay-300" />
+            <div className="w-32 h-32 bg-[#5DCAA5] rounded-full flex items-center justify-center relative z-10 shadow-2xl shadow-[#5DCAA5]/40">
+              <Video className="w-12 h-12 text-black" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Calling Remote Expert</h2>
+          <p className="text-white/60 text-sm animate-pulse">Waiting for expert to join session...</p>
+          
+          <button 
+            onClick={() => navigate('/')}
+            className="mt-12 px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-medium transition-all"
+          >
+            Cancel Call
+          </button>
+        </div>
+      )}
+
       <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain z-0" />
       <audio ref={remoteAudioRef} autoPlay />
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-10" />

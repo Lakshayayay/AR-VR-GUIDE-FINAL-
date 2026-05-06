@@ -24,6 +24,39 @@ export default function App() {
       '--detection-teal': '#5eead4'
     } as React.CSSProperties}>
 
+      {/* Incoming Call Notification */}
+      {incomingCall && !callAccepted && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] bg-[#111] border-2 border-[var(--hal-blue)] rounded-2xl p-6 shadow-2xl flex items-center gap-6 animate-bounce">
+          <div className="w-12 h-12 bg-[var(--hal-blue)] rounded-full flex items-center justify-center animate-pulse">
+            <Video className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="text-white font-bold text-lg">Incoming Session Call</div>
+            <div className="text-white/60 text-sm">{incomingCall.techName} is requesting assistance</div>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIncomingCall(null)}
+              className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+            >
+              Ignore
+            </button>
+            <button 
+              onClick={() => {
+                setCallAccepted(true);
+                socketRef.current?.emit('call-accepted', { 
+                  sessionId: incomingCall.sessionId,
+                  expertSocketId: socketRef.current.id 
+                });
+              }}
+              className="px-6 py-2 bg-[var(--hal-blue)] text-white font-bold rounded-lg hover:opacity-90 transition-opacity"
+            >
+              Accept & Join
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Nav Bar */}
       <div className="h-12 border-b border-border flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
@@ -101,9 +134,10 @@ function LiveSession({ selectedSession, setSelectedSession }: {
   const [micEnabled, setMicEnabled] = useState(true);
   const [speakerEnabled, setSpeakerEnabled] = useState(true);
   const [volume, setVolume] = useState(75);
-  const [isFrozen, setIsFrozen] = useState(false);
   const [isLaserOn, setIsLaserOn] = useState(false);
   const [sessionTime, setSessionTime] = useState(0);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [callAccepted, setCallAccepted] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
