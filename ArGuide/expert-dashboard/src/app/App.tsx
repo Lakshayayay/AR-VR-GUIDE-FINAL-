@@ -7,8 +7,78 @@ const SESSION_ID = 'HAL-123';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('live');
+  const [activeTab, setActiveTab] = useState('history'); // Default to history
   const [selectedSession, setSelectedSession] = useState('SES-20240418-001');
+  const [sessionHistory, setSessionHistory] = useState([
+    { id: 'SES-20240418-001', tech: 'Rajesh Kumar', location: 'Assembly Bay 3', expert: 'Dr. Mehta', date: '2026-04-18', duration: '14:23', annotations: 37, status: 'completed' }
+  ]);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [callAccepted, setCallAccepted] = useState(false);
+  const socketRef = useRef<any>(null);
+
+  // Initialize socket at the App level to listen for calls globally
+  useEffect(() => {
+    const socket = io(SERVER_URL);
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('Expert connected to server');
+      // Join a generic expert room to receive calls
+      socket.emit('join-session', 'expert-room');
+    });
+
+    socket.on('call-expert', (data: any) => {
+      console.log('Incoming call from:', data.techName);
+      setIncomingCall(data);
+      // Play a ringing sound
+      try {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.play().catch(() => {
+          // Fallback beep
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          osc.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.5);
+        });
+      } catch(e) {}
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  const handleAcceptCall = () => {
+    setCallAccepted(true);
+    setActiveTab('live');
+    if (socketRef.current && incomingCall) {
+      socketRef.current.emit('call-accepted', { 
+        sessionId: incomingCall.sessionId,
+        expertSocketId: socketRef.current.id 
+      });
+      // The session ID might be dynamic now based on the call
+      setSelectedSession(incomingCall.sessionId || 'HAL-123');
+    }
+  };
+
+  const handleEndCall = (duration: string) => {
+    if (incomingCall) {
+      setSessionHistory(prev => [{
+        id: incomingCall.sessionId || `SES-${Date.now()}`,
+        tech: incomingCall.techName || 'Unknown Tech',
+        location: 'Field Site',
+        expert: 'You',
+        date: new Date().toISOString().split('T')[0],
+        duration: duration,
+        annotations: Math.floor(Math.random() * 20) + 5,
+        status: 'completed'
+      }, ...prev]);
+    }
+    setCallAccepted(false);
+    setIncomingCall(null);
+    setActiveTab('history');
+  };
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground" style={{
@@ -36,19 +106,16 @@ export default function App() {
           </div>
           <div className="flex gap-2">
             <button 
-              onClick={() => setIncomingCall(null)}
+              onClick={() => {
+                setIncomingCall(null);
+                socketRef.current?.emit('call-rejected', { to: incomingCall.from });
+              }}
               className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
             >
               Ignore
             </button>
             <button 
-              onClick={() => {
-                setCallAccepted(true);
-                socketRef.current?.emit('call-accepted', { 
-                  sessionId: incomingCall.sessionId,
-                  expertSocketId: socketRef.current.id 
-                });
-              }}
+              onClick={handleAcceptCall}
               className="px-6 py-2 bg-[var(--hal-blue)] text-white font-bold rounded-lg hover:opacity-90 transition-opacity"
             >
               Accept & Join
@@ -102,10 +169,15 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {activeTab === 'live' && (
-          <LiveSession selectedSession={selectedSession} setSelectedSession={setSelectedSession} />
-        )}
-        {activeTab === 'history' && <SessionHistory />}
+        <div style={{ display: activeTab === 'live' ? 'flex' : 'none', width: '100%', height: '100%' }}>
+          <LiveSession 
+            selectedSession={selectedSession} 
+            setSelectedSession={setSelectedSession} 
+            globalSocket={socketRef.current}
+            onEndCall={handleEndCall}
+          />
+        </div>
+        {activeTab === 'history' && <SessionHistory sessions={sessionHistory} />}
         {activeTab === 'analytics' && <Analytics />}
         {activeTab === 'settings' && <Settings />}
       </div>
@@ -123,9 +195,11 @@ export default function App() {
   );
 }
 
-function LiveSession({ selectedSession, setSelectedSession }: {
+function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndCall }: {
   selectedSession: string;
   setSelectedSession: (id: string) => void;
+  globalSocket: any;
+  onEndCall: (duration: string) => void;
 }) {
   const [activeTool, setActiveTool] = useState('arrow');
   const [activeColor, setActiveColor] = useState('red');
@@ -136,8 +210,6 @@ function LiveSession({ selectedSession, setSelectedSession }: {
   const [volume, setVolume] = useState(75);
   const [isLaserOn, setIsLaserOn] = useState(false);
   const [sessionTime, setSessionTime] = useState(0);
-  const [incomingCall, setIncomingCall] = useState<any>(null);
-  const [callAccepted, setCallAccepted] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -181,26 +253,26 @@ function LiveSession({ selectedSession, setSelectedSession }: {
   };
 
   useEffect(() => {
-    const socket = io(SERVER_URL);
+    if (!globalSocket) return;
+    
+    const socket = globalSocket;
     socketRef.current = socket;
     setSocket(socket);
 
-    socket.on('connect', () => {
-      setConnectionStatus('Server Connected. Waiting for Technician...');
-      socket.emit('join-session', SESSION_ID);
-      
-      // Capture local audio to send to technician
-      streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        console.log('Expert mic captured');
-        localStreamRef.current = stream;
-        return stream;
-      }).catch(err => {
-        console.error('Mic access denied:', err);
-        throw err;
-      });
+    setConnectionStatus('Server Connected. Waiting for Technician stream...');
+    socket.emit('join-session', selectedSession);
+    
+    // Capture local audio to send to technician
+    streamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      console.log('Expert mic captured');
+      localStreamRef.current = stream;
+      return stream;
+    }).catch(err => {
+      console.error('Mic access denied:', err);
+      throw err;
     });
 
-    socket.on('clear-annotations', () => {
+    const handleClearAnnotations = () => {
       console.log('Expert received clear command');
       if (previewCanvasRef.current) {
         const pCtx = previewCanvasRef.current.getContext('2d');
@@ -219,9 +291,9 @@ function LiveSession({ selectedSession, setSelectedSession }: {
         annotationGroupRef.current.position.set(0, 0, 0);
       }
       trackerStateRef.current.active = false;
-    });
+    };
 
-    socket.on('annotation', (data: any) => {
+    const handleAnnotation = (data: any) => {
       console.log('Expert received annotation from technician:', data.tool);
       if (previewCanvasRef.current) {
         const pCtx = previewCanvasRef.current.getContext('2d');
@@ -238,41 +310,36 @@ function LiveSession({ selectedSession, setSelectedSession }: {
           pCtx.lineTo(data.x2, data.y2);
           pCtx.stroke();
         } else {
-           // For geometric shapes, we can use the drawShape helper if available
-           // or just draw a line for now to ensure visibility
            pCtx.beginPath();
            pCtx.moveTo(data.x1, data.y1);
            pCtx.lineTo(data.x2, data.y2);
            pCtx.stroke();
         }
       }
-    });
+    };
 
-    socket.on('tracking_update', (data: any) => {
+    const handleTrackingUpdate = (data: any) => {
       if (!annotationGroupRef.current || !cameraRef.current) return;
-
-      // Match the technician's unified 16:9 reference for sync
       const vFov = THREE.MathUtils.degToRad(cameraRef.current.fov);
       const planeHeight = 2 * Math.tan(vFov / 2) * cameraRef.current.position.z;
       const planeWidth = planeHeight * (16 / 9);
 
       annotationGroupRef.current.position.x = (data.dx / 400) * planeWidth;
       annotationGroupRef.current.position.y = -(data.dy / 225) * planeHeight;
-    });
+    };
 
-    socket.on('user-joined', (userId: string) => {
+    const handleUserJoined = (userId: string) => {
       setConnectionStatus('Technician joined. Requesting stream...');
       socket.emit('signal', { to: userId, signal: { type: 'request-offer' } });
-    });
+    };
 
-    socket.on('signal', async (data) => {
+    const handleSignal = async (data: any) => {
       let peer = peerRef.current;
       if (!peer) {
         setConnectionStatus('Negotiating WebRTC stream...');
         peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         peerRef.current = peer;
 
-        // Add expert audio track to the connection (non-blocking)
         if (localStreamRef.current) {
           console.log('Adding expert tracks to peer');
           localStreamRef.current.getTracks().forEach(track => {
@@ -295,7 +362,6 @@ function LiveSession({ selectedSession, setSelectedSession }: {
           setConnectionStatus('Live Stream Active!');
           if (videoRef.current) {
             videoRef.current.srcObject = e.streams[0];
-            // Ensure muted state is correct
             videoRef.current.muted = !speakerEnabled;
             videoRef.current.play().catch(err => console.error('Play error:', err));
           }
@@ -311,13 +377,26 @@ function LiveSession({ selectedSession, setSelectedSession }: {
       } else if (sig.type === 'candidate') {
         await peer.addIceCandidate(new RTCIceCandidate(sig.candidate));
       }
-    });
+    };
+
+    socket.on('clear-annotations', handleClearAnnotations);
+    socket.on('annotation', handleAnnotation);
+    socket.on('tracking_update', handleTrackingUpdate);
+    socket.on('user-joined', handleUserJoined);
+    socket.on('signal', handleSignal);
 
     return () => {
-      socket.disconnect();
+      socket.off('clear-annotations', handleClearAnnotations);
+      socket.off('annotation', handleAnnotation);
+      socket.off('tracking_update', handleTrackingUpdate);
+      socket.off('user-joined', handleUserJoined);
+      socket.off('signal', handleSignal);
       if (peerRef.current) peerRef.current.close();
+      if (localStreamRef.current) {
+         localStreamRef.current.getTracks().forEach(t => t.stop());
+      }
     };
-  }, []);
+  }, [globalSocket, selectedSession, speakerEnabled]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -607,71 +686,41 @@ function LiveSession({ selectedSession, setSelectedSession }: {
      if(socketRef.current) socketRef.current.emit('clear-annotations', { sessionId: SESSION_ID });
   };
 
-  const sessions = [
-    { id: 'SES-20240418-001', tech: 'Rajesh Kumar', location: 'Assembly Bay 3', status: 'recording' },
-    { id: 'SES-20240418-002', tech: 'Anita Sharma', location: 'Engine Test Cell', status: 'live' },
-    { id: 'SES-20240418-003', tech: 'Vijay Singh', location: 'Hydraulics Lab', status: 'idle' }
-  ];
-
-  const queued = [
-    { id: 'SES-20240418-004', tech: 'Priya Patel', location: 'Avionics Shop' }
-  ];
-
   return (
     <>
       {/* Left Sidebar */}
-      <div className="w-52 border-r border-border flex flex-col bg-sidebar">
-        <div className="p-4 border-b border-sidebar-border">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">Active Sessions</div>
+      <div className="w-52 border-r border-border flex flex-col bg-sidebar relative">
+        <div className="absolute inset-0 bg-[#5DCAA5]/5 animate-pulse" />
+        <div className="p-4 border-b border-sidebar-border relative z-10">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-2">
+             <span className="w-2 h-2 rounded-full bg-[var(--status-online)] animate-ping" />
+             Active Session
+          </div>
           <div className="space-y-2">
-            {sessions.map(session => (
-              <button
-                key={session.id}
-                onClick={() => setSelectedSession(session.id)}
-                className={`w-full p-3 rounded border text-left transition-colors ${
-                  selectedSession === session.id
-                    ? 'border-[var(--hal-blue)] border-l-2 bg-accent'
-                    : 'border-border hover:bg-accent/50'
-                }`}
-              >
-                <div className="font-mono text-xs text-muted-foreground">{session.id}</div>
-                <div className="text-sm mt-1">{session.tech}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{session.location}</div>
-                <div className="mt-2">
-                  {session.status === 'recording' && (
-                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded bg-[var(--status-recording)]/10 text-[var(--status-recording)]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-recording)] animate-pulse"></span>
-                      Recording
+              <div className="w-full p-3 rounded border border-[var(--hal-blue)] border-l-2 bg-accent text-left transition-colors">
+                <div className="font-mono text-xs text-[var(--hal-blue)]">{selectedSession}</div>
+                <div className="text-sm mt-1 text-white">Technician Connected</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Live Remote Support</div>
+                <div className="mt-4 flex flex-col gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded bg-[var(--status-online)]/10 text-[var(--status-online)] font-mono border border-[var(--status-online)]/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-online)] shadow-[0_0_8px_var(--status-online)]" />
+                      Streaming...
                     </span>
-                  )}
-                  {session.status === 'live' && (
-                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded bg-[var(--status-online)]/10 text-[var(--status-online)]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-online)]"></span>
-                      Live
-                    </span>
-                  )}
-                  {session.status === 'idle' && (
-                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded bg-[var(--status-idle)]/10 text-[var(--status-idle)]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-idle)]"></span>
-                      Idle
-                    </span>
-                  )}
+                    <button 
+                      onClick={() => onEndCall(formatTime(sessionTime))}
+                      className="w-full py-2 bg-red-600/90 hover:bg-red-500 text-white rounded font-bold transition-all shadow-lg flex items-center justify-center gap-2 mt-4"
+                    >
+                      End Call
+                    </button>
                 </div>
-              </button>
-            ))}
+              </div>
           </div>
         </div>
 
-        <div className="p-4 flex-1">
+        <div className="p-4 flex-1 relative z-10 opacity-50">
           <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">Queued</div>
-          <div className="space-y-2">
-            {queued.map(session => (
-              <div key={session.id} className="p-3 rounded border border-border">
-                <div className="font-mono text-xs text-muted-foreground">{session.id}</div>
-                <div className="text-sm mt-1">{session.tech}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{session.location}</div>
-              </div>
-            ))}
+          <div className="space-y-2 text-center py-4 text-xs text-muted-foreground">
+             No pending calls.
           </div>
         </div>
 
@@ -983,16 +1032,7 @@ function LiveSession({ selectedSession, setSelectedSession }: {
   );
 }
 
-function SessionHistory() {
-  const sessions = [
-    { id: 'SES-20240418-001', tech: 'Rajesh Kumar', location: 'Assembly Bay 3', expert: 'Dr. Mehta', date: '2026-04-18', duration: '14:23', annotations: 37, status: 'completed' },
-    { id: 'SES-20240417-008', tech: 'Anita Sharma', location: 'Engine Test Cell', expert: 'R. Iyer', date: '2026-04-17', duration: '28:45', annotations: 52, status: 'completed' },
-    { id: 'SES-20240417-007', tech: 'Vijay Singh', location: 'Hydraulics Lab', expert: 'Dr. Mehta', date: '2026-04-17', duration: '19:12', annotations: 41, status: 'completed' },
-    { id: 'SES-20240417-006', tech: 'Priya Patel', location: 'Avionics Shop', expert: 'S. Reddy', date: '2026-04-17', duration: '32:08', annotations: 68, status: 'completed' },
-    { id: 'SES-20240416-012', tech: 'Kumar Das', location: 'Assembly Bay 1', expert: 'Dr. Mehta', date: '2026-04-16', duration: '45:33', annotations: 89, status: 'completed' },
-    { id: 'SES-20240416-011', tech: 'Neha Gupta', location: 'Paint Shop', expert: 'R. Iyer', date: '2026-04-16', duration: '12:20', annotations: 24, status: 'failed' }
-  ];
-
+function SessionHistory({ sessions }: { sessions: any[] }) {
   return (
     <div className="flex-1 flex flex-col p-6">
       {/* Filter Bar */}
