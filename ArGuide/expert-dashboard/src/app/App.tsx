@@ -95,32 +95,44 @@ export default function App() {
       '--detection-teal': '#5eead4'
     } as React.CSSProperties}>
 
-      {/* Incoming Call Notification */}
+      {/* Incoming Call Notification - Full Screen Overlay */}
       {incomingCall && !callAccepted && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] bg-[#111] border-2 border-[var(--hal-blue)] rounded-2xl p-6 shadow-2xl flex items-center gap-6 animate-bounce">
-          <div className="w-12 h-12 bg-[var(--hal-blue)] rounded-full flex items-center justify-center animate-pulse">
-            <Video className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <div className="text-white font-bold text-lg">Incoming Session Call</div>
-            <div className="text-white/60 text-sm">{incomingCall.techName} is requesting assistance</div>
-          </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => {
-                setIncomingCall(null);
-                socketRef.current?.emit('call-rejected', { to: incomingCall.from });
-              }}
-              className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
-            >
-              Ignore
-            </button>
-            <button 
-              onClick={handleAcceptCall}
-              className="px-6 py-2 bg-[var(--hal-blue)] text-white font-bold rounded-lg hover:opacity-90 transition-opacity"
-            >
-              Accept & Join
-            </button>
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
+          {/* Pulsing rings */}
+          <div className="absolute w-96 h-96 rounded-full border-2 border-[var(--hal-blue)]/30 animate-ping" />
+          <div className="absolute w-80 h-80 rounded-full border-2 border-[var(--hal-blue)]/50 animate-ping" style={{ animationDelay: '0.3s' }} />
+          <div className="absolute w-64 h-64 rounded-full border-2 border-[var(--hal-blue)]/70 animate-ping" style={{ animationDelay: '0.6s' }} />
+
+          <div className="relative z-10 bg-[#0d1621] border-2 border-[var(--hal-blue)] rounded-3xl p-10 shadow-2xl flex flex-col items-center gap-6 min-w-[380px]">
+            <div className="w-24 h-24 bg-[var(--hal-blue)] rounded-full flex items-center justify-center shadow-lg shadow-[var(--hal-blue)]/40">
+              <Video className="w-12 h-12 text-white" />
+            </div>
+            <div className="text-center">
+              <div className="text-white font-bold text-2xl mb-1">Incoming Session Call</div>
+              <div className="text-white/70 text-base">
+                <span className="text-[var(--hal-blue)] font-semibold">{incomingCall.techName || 'Technician'}</span> is requesting live assistance
+              </div>
+              {incomingCall.sessionId && (
+                <div className="mt-2 px-3 py-1 bg-white/5 rounded-full text-xs text-white/40 font-mono">{incomingCall.sessionId}</div>
+              )}
+            </div>
+            <div className="flex gap-4 w-full">
+              <button
+                onClick={() => {
+                  setIncomingCall(null);
+                  socketRef.current?.emit('call-rejected', { to: incomingCall.from });
+                }}
+                className="flex-1 py-3 bg-white/10 text-white rounded-xl font-medium hover:bg-white/20 transition-colors"
+              >
+                Decline
+              </button>
+              <button
+                onClick={handleAcceptCall}
+                className="flex-1 py-3 bg-[var(--hal-blue)] text-white font-bold rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-[var(--hal-blue)]/30"
+              >
+                ✓ Accept & Join
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -170,14 +182,27 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        <div style={{ display: activeTab === 'live' ? 'flex' : 'none', width: '100%', height: '100%' }}>
-          <LiveSession 
-            selectedSession={selectedSession} 
-            setSelectedSession={setSelectedSession} 
-            globalSocket={socketRef.current}
-            onEndCall={handleEndCall}
-          />
-        </div>
+        {/* LiveSession only mounts AFTER a call is accepted */}
+        {activeTab === 'live' && callAccepted
+          ? <LiveSession
+              selectedSession={selectedSession}
+              setSelectedSession={setSelectedSession}
+              globalSocket={socketRef.current}
+              onEndCall={handleEndCall}
+            />
+          : activeTab === 'live' && !callAccepted
+          ? (
+            // Waiting screen shown when user manually clicks Live Session tab but no call is active
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-[var(--hal-blue)]/10 border border-[var(--hal-blue)]/30 flex items-center justify-center">
+                <Video className="w-8 h-8 text-[var(--hal-blue)]" />
+              </div>
+              <div className="text-lg font-medium">Waiting for Incoming Call</div>
+              <div className="text-sm text-muted-foreground max-w-xs">When a technician calls, you will see a notification to accept the session.</div>
+            </div>
+          )
+          : null
+        }
         {activeTab === 'history' && <SessionHistory sessions={sessionHistory} />}
         {activeTab === 'analytics' && <Analytics />}
         {activeTab === 'settings' && <Settings />}
