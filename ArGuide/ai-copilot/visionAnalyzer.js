@@ -165,7 +165,7 @@ export async function analyzeLiveFrame(base64ImageData, activeSopId, stepData = 
   let prompt = `You are an industrial safety and quality AI monitoring a live maintenance session.
 
 Analyze this video frame and identify:
-
+x
 SAFETY VIOLATIONS (Priority 1):
 - Missing PPE: hard hat, safety glasses, gloves, hearing protection
 - Electrical hazards: exposed wiring, improper grounding, arc flash zones

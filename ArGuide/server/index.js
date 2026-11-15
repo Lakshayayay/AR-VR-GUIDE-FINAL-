@@ -86,7 +86,38 @@ io.on('connection', (socket) => {
   socket.on('end_session', (data) => {
     io.to('ai_service_room').emit('session_ended', data);
   });
+
+  // End session broadcast — notifies everyone in the session room
+  socket.on('end-session', (data) => {
+    console.log('[Server] Session ended:', data.sessionId);
+    socket.to(data.sessionId).emit('session-ended', { from: socket.id });
+    socket.to('expert-room').emit('session-ended', { from: socket.id });
+    io.to('ai_service_room').emit('session_ended', data);
+  });
   // ========== END AI CO-PILOT EVENT RELAY ==========
+  // ========== CALL SIGNALING HANDLERS ==========
+  socket.on('call-expert', (data) => {
+    console.log('[Server] Call from technician:', data.techName, 'for session:', data.sessionId);
+    // Broadcast to all experts in the expert-room
+    io.to('expert-room').emit('call-expert', {
+      ...data,
+      from: socket.id
+    });
+  });
+
+  socket.on('call-accepted', (data) => {
+    console.log('[Server] Call accepted by expert for session:', data.sessionId);
+    // Notify the technician that the call was accepted
+    io.to(data.sessionId).emit('call-accepted', data);
+  });
+
+  socket.on('call-rejected', (data) => {
+    console.log('[Server] Call rejected by expert');
+    if (data.to) {
+      io.to(data.to).emit('call-rejected');
+    }
+  });
+  // ========== END CALL SIGNALING HANDLERS ==========
 });
 
 const PORT = process.env.PORT || 3000;

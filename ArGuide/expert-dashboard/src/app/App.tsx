@@ -54,17 +54,20 @@ export default function App() {
       }
     });
 
-    // FALLBACK: user-joined fires when Technician joins 'expert-room' (works with existing server NOW)
+    // FALLBACK: user-joined fires when Technician joins 'expert-room'
+    // Deferred by 600ms so the call-expert event (which carries the correct sessionId) can take priority
     socket.on('user-joined', (techSocketId: string) => {
       console.log('[Expert] Technician joined expert-room, socket ID:', techSocketId);
-      if (!incomingCallRef.current) {
-        setIncomingCall({
-          techName: 'Field Technician',
-          sessionId: `session-${techSocketId}`,
-          from: techSocketId
-        });
-        playRing();
-      }
+      setTimeout(() => {
+        if (!incomingCallRef.current) {
+          setIncomingCall({
+            techName: 'Field Technician',
+            sessionId: 'HAL-123',
+            from: techSocketId
+          });
+          playRing();
+        }
+      }, 600);
     });
 
     return () => {
@@ -84,8 +87,12 @@ export default function App() {
         socketRef.current._techFrom = techSocketId;
       }
 
-      // Join the shared session room so WebRTC can connect
+      // Join the shared session room so WebRTC and annotations can connect
       socketRef.current.emit('join-session', sessionRoom);
+      // Always also join the default session room to ensure annotation sync
+      if (sessionRoom !== 'HAL-123') {
+        socketRef.current.emit('join-session', 'HAL-123');
+      }
 
       // Signal the Technician directly via the existing 'signal' route (no server redeploy needed)
       if (techSocketId) {
@@ -118,9 +125,16 @@ export default function App() {
         status: 'completed'
       }, ...prev]);
     }
+    
+    // Notify via room broadcast — server relays to all session members
+    if (socketRef.current) {
+      const sessionRoom = incomingCall?.sessionId || 'HAL-123';
+      socketRef.current.emit('end-session', { sessionId: sessionRoom });
+    }
+
     setCallAccepted(false);
     setIncomingCall(null);
-    setActiveTab('history');
+    setActiveTab('live');
   };
 
   return (
@@ -279,6 +293,13 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
   const [isLaserOn, setIsLaserOn] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
   const [sessionTime, setSessionTime] = useState(0);
+  const [technicianDrawing, setTechnicianDrawing] = useState(false);
+  const [annotationLog, setAnnotationLog] = useState<{time: string; text: string; source: string}[]>([]);
+  const [textInput, setTextInput] = useState<{ visible: boolean; x: number; y: number; screenX: number; screenY: number; value: string }>({
+    visible: false, x: 0, y: 0, screenX: 0, screenY: 0, value: ''
+  });
+  const techDrawingTimerRef = useRef<any>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -330,6 +351,10 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
 
     setConnectionStatus('Server Connected. Waiting for Technician stream...');
     socket.emit('join-session', selectedSession);
+    // Always join the default session room to guarantee annotation sync with technician
+    if (selectedSession !== 'HAL-123') {
+      socket.emit('join-session', 'HAL-123');
+    }
 
     // Immediately request offer from the Technician if we know their socket ID
     // (the 'from' field is set when call was routed via user-joined)
@@ -373,9 +398,28 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
     };
 
     const handleAnnotation = (data: any) => {
-      console.log('Expert received annotation:', data.tool, data.fromHand ? '(hand)' : '(expert)');
-      
-      // Render ALL annotations (including hand-drawn from technician) as 3D meshes
+      // Skip expert's own echoed annotations — only render fromHand (technician) annotations
+      // Expert annotations are already rendered locally in draw()/stopDrawing()
+      if (data.fromExpert) return;
+
+      const isFromTechnician = !!data.fromHand;
+      console.log('Expert received annotation:', data.tool, isFromTechnician ? '(technician hand)' : '(echo)');
+
+      // Show technician-drawing indicator
+      if (isFromTechnician) {
+        setTechnicianDrawing(true);
+        clearTimeout(techDrawingTimerRef.current);
+        techDrawingTimerRef.current = setTimeout(() => setTechnicianDrawing(false), 1200);
+      }
+
+      // Log the annotation
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      const source = isFromTechnician ? 'Technician (Hand)' : 'Expert';
+      const toolLabel = (data.tool || 'freehand').charAt(0).toUpperCase() + (data.tool || 'freehand').slice(1);
+      setAnnotationLog(prev => [{ time: timeStr, text: `${toolLabel} annotation (${data.color || '#00ff00'})`, source }, ...prev].slice(0, 50));
+
+      // Render annotation as 3D mesh
       if (sceneRef.current && cameraRef.current && annotationGroupRef.current) {
         const nx1 = (data.x1 / data.canvasW) * 2 - 1;
         const ny1 = -(data.y1 / data.canvasH) * 2 + 1;
@@ -392,7 +436,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
         });
         
         let mesh: THREE.Object3D;
-        const lineThickness = data.fromHand ? 0.003 : 0.005;
+        const lineThickness = isFromTechnician ? 0.003 : 0.005;
 
         if (data.tool === 'rectangle') {
           const group = new THREE.Group();
@@ -419,6 +463,34 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
           head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
           group.add(head);
           mesh = group;
+        } else if (data.tool === 'text' && data.text) {
+          // Text annotation — create a sprite
+          const textCanvas = document.createElement('canvas');
+          const tCtx = textCanvas.getContext('2d')!;
+          const fontSize = 64;
+          tCtx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+          const metrics = tCtx.measureText(data.text);
+          const textW = metrics.width + 32;
+          const textH = fontSize + 24;
+          textCanvas.width = textW;
+          textCanvas.height = textH;
+          tCtx.fillStyle = 'rgba(0,0,0,0.65)';
+          tCtx.beginPath();
+          tCtx.roundRect(0, 0, textW, textH, 12);
+          tCtx.fill();
+          tCtx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+          tCtx.fillStyle = data.color || '#00ff00';
+          tCtx.textBaseline = 'middle';
+          tCtx.textAlign = 'center';
+          tCtx.fillText(data.text, textW / 2, textH / 2);
+          const texture = new THREE.CanvasTexture(textCanvas);
+          texture.minFilter = THREE.LinearFilter;
+          const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+          mesh = new THREE.Sprite(spriteMat);
+          mesh.position.copy(vec1);
+          const aspect = textW / textH;
+          const scale = 0.35;
+          mesh.scale.set(scale * aspect, scale, 1);
         } else {
           // freehand / line - render as 3D tube
           mesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(vec1, vec2), 8, lineThickness, 8, false), material);
@@ -435,14 +507,18 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
         const pCtx = previewCanvasRef.current.getContext('2d');
         if (!pCtx) return;
 
+        // Scale coordinates from sender's canvas dimensions to expert's preview canvas
+        const scaleX = previewCanvasRef.current.width / (data.canvasW || 1280);
+        const scaleY = previewCanvasRef.current.height / (data.canvasH || 720);
+
         pCtx.strokeStyle = data.color || '#00ff00';
-        pCtx.lineWidth = data.fromHand ? 2 : 3;
+        pCtx.lineWidth = isFromTechnician ? 2 : 3;
         pCtx.lineCap = 'round';
         pCtx.lineJoin = 'round';
 
         pCtx.beginPath();
-        pCtx.moveTo(data.x1, data.y1);
-        pCtx.lineTo(data.x2, data.y2);
+        pCtx.moveTo(data.x1 * scaleX, data.y1 * scaleY);
+        pCtx.lineTo(data.x2 * scaleX, data.y2 * scaleY);
         pCtx.stroke();
       }
     };
@@ -498,6 +574,12 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
       }
 
       const sig = data.signal;
+      if (sig.type === 'call-ended') {
+        // Technician ended the call, invoke the end call handler
+        onEndCall('00:00:00'); // the formatTime logic is not accessible here, passing generic or duration
+        return;
+      }
+
       if (sig.type === 'offer') {
         await peer.setRemoteDescription(new RTCSessionDescription(sig));
         const answer = await peer.createAnswer();
@@ -514,12 +596,19 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
     socket.on('user-joined', handleUserJoined);
     socket.on('signal', handleSignal);
 
+    // Listen for room-broadcast session-ended from technician
+    const handleSessionEnded = () => {
+      onEndCall(formatTime(sessionTime));
+    };
+    socket.on('session-ended', handleSessionEnded);
+
     return () => {
       socket.off('clear-annotations', handleClearAnnotations);
       socket.off('annotation', handleAnnotation);
       socket.off('tracking_update', handleTrackingUpdate);
       socket.off('user-joined', handleUserJoined);
       socket.off('signal', handleSignal);
+      socket.off('session-ended', handleSessionEnded);
       if (peerRef.current) peerRef.current.close();
       if (localStreamRef.current) {
          localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -538,7 +627,7 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
     if (!canvasRef.current) return;
     const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(85, 1280 / 720, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(85, 16 / 9, 0.1, 1000);
     camera.position.z = 5;
 
     const annotationGroup = new THREE.Group();
@@ -562,7 +651,8 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
       if (parent) {
         const width = parent.clientWidth;
         const height = parent.clientHeight;
-        camera.aspect = width / height;
+        // Lock aspect to 16:9 to match technician's coordinate system
+        camera.aspect = 16 / 9;
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
       }
@@ -595,6 +685,22 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
   };
 
   const startDrawing = (e: any) => {
+    // Text tool: show input popup at click position
+    if (activeTool === 'text') {
+      const pos = getCanvasPos(e);
+      const rect = (previewCanvasRef.current || canvasRef.current)?.getBoundingClientRect();
+      setTextInput({
+        visible: true,
+        x: pos.x,
+        y: pos.y,
+        screenX: e.clientX - (rect?.left || 0),
+        screenY: e.clientY - (rect?.top || 0),
+        value: ''
+      });
+      setTimeout(() => textInputRef.current?.focus(), 50);
+      return;
+    }
+
     isDrawing.current = true;
     const pos = getCanvasPos(e);
     startPos.current = pos;
@@ -634,6 +740,102 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
     }
   };
 
+  // Helper: create a 3D text sprite from a string
+  const createTextSprite = (text: string, color: string, position: THREE.Vector3) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    const fontSize = 64;
+    ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+    const metrics = ctx.measureText(text);
+    const textW = metrics.width + 32;
+    const textH = fontSize + 24;
+    canvas.width = textW;
+    canvas.height = textH;
+
+    // Background pill
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, textW, textH, 12);
+    ctx.fill();
+
+    // Text
+    ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, textW / 2, textH / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.position.copy(position);
+    // Scale sprite to be readable in 3D scene
+    const aspect = textW / textH;
+    const scale = 0.35;
+    sprite.scale.set(scale * aspect, scale, 1);
+    return sprite;
+  };
+
+  // Submit text annotation
+  const submitTextAnnotation = () => {
+    const text = textInput.value.trim();
+    if (!text || !canvasRef.current || !cameraRef.current || !annotationGroupRef.current) {
+      setTextInput(prev => ({ ...prev, visible: false }));
+      return;
+    }
+
+    const hex = getHexColor(activeColor);
+    const data = {
+      tool: 'text',
+      text,
+      x1: textInput.x,
+      y1: textInput.y,
+      x2: textInput.x,
+      y2: textInput.y,
+      color: hex,
+      canvasW: canvasRef.current.width,
+      canvasH: canvasRef.current.height
+    };
+
+    // Create 3D sprite locally
+    const nx = (data.x1 / data.canvasW) * 2 - 1;
+    const ny = -(data.y1 / data.canvasH) * 2 + 1;
+    const vec = new THREE.Vector3(nx, ny, 0.5).unproject(cameraRef.current);
+
+    const sprite = createTextSprite(text, hex, vec);
+    (sprite as any).userData.isAnnotation = true;
+    sprite.position.x -= annotationGroupRef.current.position.x;
+    sprite.position.y -= annotationGroupRef.current.position.y;
+    annotationGroupRef.current.add(sprite);
+
+    // Draw on preview canvas too
+    if (previewCanvasRef.current) {
+      const pCtx = previewCanvasRef.current.getContext('2d');
+      if (pCtx) {
+        pCtx.font = 'bold 18px Inter, Arial, sans-serif';
+        pCtx.fillStyle = 'rgba(0,0,0,0.6)';
+        const tm = pCtx.measureText(text);
+        pCtx.fillRect(data.x1 - 4, data.y1 - 18, tm.width + 8, 24);
+        pCtx.fillStyle = hex;
+        pCtx.fillText(text, data.x1, data.y1);
+      }
+    }
+
+    // Emit to technician
+    if (socketRef.current) {
+      socketRef.current.emit('annotation', {
+        sessionId: selectedSession,
+        ...data,
+        fromExpert: true
+      });
+    }
+
+    // Activate tracker
+    trackerStateRef.current.active = true;
+    setTextInput(prev => ({ ...prev, visible: false, value: '' }));
+  };
+
   const draw = (e: any) => {
     if (isLaserOn && socketRef.current) {
         const pos = getCanvasPos(e);
@@ -668,7 +870,8 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
           y2: newPos.y,
           color: hex,
           canvasW: canvasRef.current.width,
-          canvasH: canvasRef.current.height
+          canvasH: canvasRef.current.height,
+          fromExpert: true
         });
       }
 
@@ -761,7 +964,8 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
       if (['rectangle', 'circle', 'arrow'].includes(activeTool) && socketRef.current) {
         socketRef.current.emit('annotation', {
           sessionId: selectedSession,
-          ...data
+          ...data,
+          fromExpert: true
         });
       }
     }
@@ -886,10 +1090,50 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
                 onMouseOut={stopDrawing}
                 className="absolute inset-0 w-full h-full z-20"
                 style={{ 
-                  cursor: activeTool === 'arrow' ? 'default' : 'crosshair', 
+                  cursor: activeTool === 'text' ? 'text' : (activeTool === 'arrow' ? 'default' : 'crosshair'), 
                   pointerEvents: isLaserOn ? 'auto' : (activeTool === 'arrow' ? 'none' : 'auto')
                 }}
               />
+
+              {/* Text Input Popup */}
+              {textInput.visible && (
+                <div
+                  className="absolute z-50"
+                  style={{ left: textInput.screenX, top: textInput.screenY }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="bg-[#0f172a] border border-[var(--hal-blue)] rounded-lg shadow-2xl p-3 flex flex-col gap-2" style={{ minWidth: '200px', boxShadow: '0 0 20px rgba(24,95,165,0.4)' }}>
+                    <div className="text-[10px] uppercase tracking-widest text-[var(--hal-blue)] font-bold">Add Text Label</div>
+                    <input
+                      ref={textInputRef}
+                      type="text"
+                      value={textInput.value}
+                      onChange={(e) => setTextInput(prev => ({ ...prev, value: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') submitTextAnnotation();
+                        if (e.key === 'Escape') setTextInput(prev => ({ ...prev, visible: false }));
+                      }}
+                      placeholder="Type annotation…"
+                      className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded text-white text-sm outline-none focus:border-[var(--hal-blue)] transition-colors"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setTextInput(prev => ({ ...prev, visible: false }))}
+                        className="flex-1 py-1.5 text-xs text-white/50 hover:text-white/80 bg-white/5 rounded transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitTextAnnotation}
+                        className="flex-1 py-1.5 text-xs text-white font-medium bg-[var(--hal-blue)] rounded hover:opacity-90 transition-opacity"
+                      >
+                        Place ↵
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* HUD Overlays */}
               {/* Top-left HUD */}
@@ -902,6 +1146,16 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
                 <div className="text-white/60">Rajesh Kumar</div>
                 <div className="text-[var(--annotation-teal)] z-20 pointer-events-none relative">{connectionStatus}</div>
               </div>
+
+              {/* Technician Hand-Drawing Indicator */}
+              {technicianDrawing && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 animate-pulse">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#00ff00]/15 border border-[#00ff00]/40 backdrop-blur-sm">
+                    <span className="w-2 h-2 rounded-full bg-[#00ff00] shadow-[0_0_8px_#00ff00]"></span>
+                    <span className="text-[#00ff00] text-xs font-medium tracking-wide">Technician Drawing (Hand Gesture)</span>
+                  </div>
+                </div>
+              )}
 
               {/* Top-right HUD */}
               <div className="absolute top-4 right-4 font-mono text-xs text-white/60 text-right space-y-1">
@@ -1135,25 +1389,25 @@ function LiveSession({ selectedSession, setSelectedSession, globalSocket, onEndC
         </div>
 
         {/* Annotation Log */}
-        <div className="p-4 flex-1">
+        <div className="p-4 flex-1 overflow-y-auto">
           <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">Annotation Log</div>
           <div className="space-y-2 text-xs">
-            <div className="pb-2 border-b border-border">
-              <div className="font-mono text-muted-foreground">14:23:45</div>
-              <div className="mt-1">Arrow annotation (red)</div>
-            </div>
-            <div className="pb-2 border-b border-border">
-              <div className="font-mono text-muted-foreground">14:22:18</div>
-              <div className="mt-1">Circle annotation (amber)</div>
-            </div>
-            <div className="pb-2 border-b border-border">
-              <div className="font-mono text-muted-foreground">14:21:03</div>
-              <div className="mt-1">Rectangle annotation (teal)</div>
-            </div>
-            <div className="pb-2 border-b border-border">
-              <div className="font-mono text-muted-foreground">14:19:42</div>
-              <div className="mt-1">Text annotation (white)</div>
-            </div>
+            {annotationLog.length === 0 && (
+              <div className="text-muted-foreground text-center py-4">No annotations yet</div>
+            )}
+            {annotationLog.map((entry, idx) => (
+              <div key={idx} className="pb-2 border-b border-border">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-muted-foreground">{entry.time}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                    entry.source.includes('Technician')
+                      ? 'bg-[#00ff00]/10 text-[#00ff00] border border-[#00ff00]/20'
+                      : 'bg-[var(--hal-blue)]/10 text-[var(--hal-blue)] border border-[var(--hal-blue)]/20'
+                  }`}>{entry.source}</span>
+                </div>
+                <div className="mt-1">{entry.text}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

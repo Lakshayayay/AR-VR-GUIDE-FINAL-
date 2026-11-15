@@ -81,6 +81,33 @@ export default function LiveSession() {
     return () => clearInterval(interval);
   }, []);
 
+  // Start camera IMMEDIATELY on mount — don't wait for socket
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    const startCamera = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStreamRef.current = stream;
+        (window as any).localStream = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setConnectionStatus('Camera ready. Connecting...');
+      } catch (err: any) {
+        setConnectionStatus(`Camera blocked: ${err.name}`);
+      }
+    };
+    startCamera();
+    return () => {
+      // Don't stop stream here — it's managed by initCamera/socket lifecycle
+    };
+  }, []);
+
+
+
+
+
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -206,7 +233,7 @@ export default function LiveSession() {
            powerPreference: 'high-performance' 
        });
        const scene = new THREE.Scene();
-       const camera = new THREE.PerspectiveCamera(85, 1280 / 720, 0.1, 1000);
+       const camera = new THREE.PerspectiveCamera(85, 16 / 9, 0.1, 1000);
        camera.position.z = 5;
       
       rendererRef.current = renderer;
@@ -225,9 +252,11 @@ export default function LiveSession() {
           currentY: 0,
           velX: 0,
           velY: 0,
-          size: 64, // Increased for better feature density
+          size: 64,
           searchWindow: 144,
-          ctx: document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+          ctx: document.createElement('canvas').getContext('2d', { willReadFrequently: true })!,
+          lostFrames: 0,          // counts consecutive lost-tracking frames
+          maxLostFrames: 15       // after this many lost frames, deactivate
        };
        tracker.ctx.canvas.width = 400;
        tracker.ctx.canvas.height = 225;
@@ -243,7 +272,7 @@ export default function LiveSession() {
           return gray;
        };
        
-       // Tracking loop (Interval-based to survive background tab throttling)
+       // Tracking loop
        const trackingInterval = setInterval(() => {
          if (tracker.active && videoRef.current && videoRef.current.readyState >= 2) {
             tracker.ctx.drawImage(videoRef.current, 0, 0, 400, 225);
@@ -267,10 +296,9 @@ export default function LiveSession() {
             const tStats = getStats(tracker.template);
             const searchData = extractGray(tracker.ctx, minX, minY, tracker.searchWindow, tracker.searchWindow);
             
-            let bestScore = -1; // For ZNCC, 1.0 is perfect, -1 is worst
+            let bestScore = -1;
             let bestDx = 0, bestDy = 0;
             const maxI = tracker.searchWindow - tracker.size;
-            const scores = new Float32Array((maxI + 1) * (maxI + 1));
 
             for (let dy=0; dy<=maxI; dy+=2) {
                 for (let dx=0; dx<=maxI; dx+=2) {
@@ -291,35 +319,48 @@ export default function LiveSession() {
                     const sStd = Math.sqrt(Math.max(0, sSqSum / count - sMean * sMean));
                     const score = (sStd < 1) ? 0 : dot / (count * tStats.std * sStd);
                     
-                    scores[dy * (maxI + 1) + dx] = score;
                     if (score > bestScore) {
                         bestScore = score; bestDx = dx; bestDy = dy;
                     }
                 }
             }
             
-            // ZNCC threshold (0.7 is usually a very good match)
-            if (bestScore > 0.65) {
-                let subX = bestDx;
-                let subY = bestDy;
+            // ZNCC threshold — raised from 0.65 to 0.78 to reject weak/noisy matches
+            if (bestScore > 0.78) {
+                tracker.lostFrames = 0;
+                const targetX = minX + bestDx + halfT;
+                const targetY = minY + bestDy + halfT;
                 
-                const targetX = minX + subX + halfT;
-                const targetY = minY + subY + halfT;
+                const rawDx = targetX - tracker.currentX;
+                const rawDy = targetY - tracker.currentY;
+                const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
                 
-                const dist = Math.sqrt(Math.pow(targetX - tracker.currentX, 2) + Math.pow(targetY - tracker.currentY, 2));
-                if (dist > 0.5) {
-                    const alpha = 0.4;
-                    tracker.currentX = tracker.currentX * (1 - alpha) + targetX * alpha;
-                    tracker.currentY = tracker.currentY * (1 - alpha) + targetY * alpha;
+                // Cap maximum displacement per frame to 8px — prevents jump on shake
+                const maxStep = 8;
+                if (dist > 0.5 && dist < maxStep) {
+                    // Smoothing alpha lowered from 0.4 to 0.15 — much smoother motion
+                    const alpha = 0.15;
+                    tracker.currentX += rawDx * alpha;
+                    tracker.currentY += rawDy * alpha;
+                } else if (dist >= maxStep) {
+                    // Large jump detected (shake) — ignore this frame entirely
+                    tracker.lostFrames++;
                 }
 
-                // Adaptive Learning: Slowly blend the new match into the template
-                // This handles rotation and slight scale changes
-                if (bestScore > 0.85) {
+                // Adaptive template learning — only on very high confidence
+                if (bestScore > 0.90) {
                     const matchData = extractGray(tracker.ctx, targetX - halfT, targetY - halfT, tracker.size, tracker.size);
                     for (let i=0; i<tracker.template.length; i++) {
                         tracker.template[i] = tracker.template[i] * 0.98 + matchData[i] * 0.02;
                     }
+                }
+            } else {
+                // Lost tracking — increment counter
+                tracker.lostFrames++;
+                if (tracker.lostFrames > tracker.maxLostFrames) {
+                    // Object completely lost — stop moving annotations randomly
+                    // Keep annotations at their last known good position
+                    tracker.lostFrames = 0;
                 }
             }
             
@@ -328,7 +369,7 @@ export default function LiveSession() {
             
             const vFov = THREE.MathUtils.degToRad(camera.fov);
             const planeHeight = 2 * Math.tan(vFov / 2) * camera.position.z;
-            const planeWidth = planeHeight * (16 / 9); // Use unified 16:9 reference for sync
+            const planeWidth = planeHeight * (16 / 9);
 
             annotationGroup.position.x = (dxPixels / 400) * planeWidth;
             annotationGroup.position.y = -(dyPixels / 225) * planeHeight;
@@ -343,7 +384,7 @@ export default function LiveSession() {
                 });
             }
         }
-       }, 33); // ~30 FPS background tracking
+       }, 33);
 
        let animationId: number;
        const animate = () => {
@@ -360,7 +401,8 @@ export default function LiveSession() {
         canvasRef.current.height = h;
         handCanvasRef.current.width = w;
         handCanvasRef.current.height = h;
-        camera.aspect = w / h;
+        // Keep camera aspect at 16:9 reference to match expert coordinate system
+        camera.aspect = 16 / 9;
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
         renderer.setPixelRatio(window.devicePixelRatio);
@@ -379,7 +421,12 @@ export default function LiveSession() {
          socket.emit('join-session', sessionId);
          // Also join a room named after our socket ID, so Expert's fallback flow can reach us
          socket.emit('join-session', `session-${socket.id}`);
-         initCamera();
+         // Only init camera here if not already started
+         if (!localStreamRef.current) initCamera();
+         else {
+           // Camera already started, emit call-expert immediately
+           socketRef.current?.emit('call-expert', { sessionId, techName: 'Field Technician' });
+         }
        });
 
        socket.on('call-accepted', () => {
@@ -391,9 +438,18 @@ export default function LiveSession() {
        });
 
        socket.on('signal', async (data: any) => {
-          // Handle call-accepted signal from Expert (fallback for existing server)
+          // Handle signals from Expert
           if (data.signal.type === 'call-accepted') {
             setCallStatus('connected');
+            return;
+          }
+          if (data.signal.type === 'call-ended') {
+            // Expert ended the call, return to index page
+            if (peerRef.current) peerRef.current.close();
+            if (localStreamRef.current) {
+               localStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            navigate('/');
             return;
           }
           if (data.signal.type === 'request-offer') {
@@ -413,6 +469,15 @@ export default function LiveSession() {
           } else if (sig.type === 'candidate') {
              await peerRef.current.addIceCandidate(new RTCIceCandidate(sig.candidate));
           }
+       });
+
+       // Listen for server-broadcast session-ended (from expert ending the call)
+       socket.on('session-ended', () => {
+          if (peerRef.current) peerRef.current.close();
+          if (localStreamRef.current) {
+             localStreamRef.current.getTracks().forEach(track => track.stop());
+          }
+          navigate('/');
        });
 
         const addAnnotationToScene = (data: any) => {
@@ -467,6 +532,34 @@ export default function LiveSession() {
                head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
                group.add(head);
                mesh = group;
+            } else if (data.tool === 'text' && data.text) {
+               // Text annotation — create a canvas-texture sprite
+               const textCanvas = document.createElement('canvas');
+               const tCtx = textCanvas.getContext('2d')!;
+               const fontSize = 64;
+               tCtx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+               const metrics = tCtx.measureText(data.text);
+               const textW = metrics.width + 32;
+               const textH = fontSize + 24;
+               textCanvas.width = textW;
+               textCanvas.height = textH;
+               tCtx.fillStyle = 'rgba(0,0,0,0.65)';
+               tCtx.beginPath();
+               tCtx.roundRect(0, 0, textW, textH, 12);
+               tCtx.fill();
+               tCtx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+               tCtx.fillStyle = data.color || '#00ff00';
+               tCtx.textBaseline = 'middle';
+               tCtx.textAlign = 'center';
+               tCtx.fillText(data.text, textW / 2, textH / 2);
+               const texture = new THREE.CanvasTexture(textCanvas);
+               texture.minFilter = THREE.LinearFilter;
+               const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+               mesh = new THREE.Sprite(spriteMat);
+               mesh.position.copy(vec1);
+               const aspect = textW / textH;
+               const scale = 0.35;
+               mesh.scale.set(scale * aspect, scale, 1);
             } else {
                mesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(vec1, vec2), 8, lineThickness, 8, false), material);
             }
@@ -665,23 +758,12 @@ export default function LiveSession() {
               fromHand: true
             };
             
-            const baseUrl = import.meta.env.VITE_AI_COPILOT_URL || `http://${window.location.hostname}:3001`;
-            fetch(`${baseUrl}/api/analyze-live`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                sessionId: sessionId,
-                frameData: null,
-                activeSopId: null,
-                timestamp: new Date().toISOString()
-              })
-            }).catch(err => console.log('Capture error:', err));
-            
+            // Render locally immediately for zero-latency feedback
             if ((window as any).addAnnotation) {
                 (window as any).addAnnotation(annotationData);
             }
 
-            // Emit to expert
+            // Emit to expert via socket (server relays to all room members)
             socketRef.current?.emit('annotation', annotationData);
             lastHandPos.current = { x: indexTip.x, y: indexTip.y };
           }
@@ -814,7 +896,22 @@ export default function LiveSession() {
           <button onClick={flipCamera} className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center">
             <CameraIcon className="w-6 h-6 text-white" />
           </button>
-          <button onClick={() => setShowEndConfirm(true)} className="px-6 py-3 bg-[#E24B4A] rounded-full text-white font-medium">End Session</button>
+          <button 
+            onClick={() => {
+              if (peerRef.current) peerRef.current.close();
+              if (localStreamRef.current) {
+                 localStreamRef.current.getTracks().forEach(track => track.stop());
+              }
+              if (socketRef.current) {
+                 // Emit end-session via room broadcast (server relays to all room members)
+                 socketRef.current.emit('end-session', { sessionId });
+              }
+              navigate('/');
+            }} 
+            className="px-6 py-3 bg-[#E24B4A] rounded-full text-white font-medium"
+          >
+            End Session
+          </button>
         </div>
       </div>
 
