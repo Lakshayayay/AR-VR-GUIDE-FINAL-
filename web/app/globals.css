@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* "Flight line" design tokens. Live call = dark (hangar). Everything else = paper.
+   Status colours follow cockpit warning lights and are used only for status. */
+@theme {
+  --color-hangar: #18222b;
+  --color-panel: #22303b;
+  --color-panel-line: #3a4a56;
+  --color-dim: #a3b3c0;
+  --color-paper: #f7f9fa;
+  --color-card: #ffffff;
+  --color-ink: #15212b;
+  --color-ink-soft: #4a5a67;
+  --color-rule: #d5dce2;
+  --color-blue: #185fa5;
+  --color-blue-bright: #6aaae8;
+  --color-warn: #c42b1f;
+  --color-warn-bright: #ff7a6e;
+  --color-caution: #f2a900;
+  --color-normal: #2e9e5b;
+  --color-normal-bright: #4cc47f;
+  --color-advisory: #2aa7d8;
+
+  --animate-stamp: stamp 180ms cubic-bezier(0.3, 1.6, 0.6, 1) both;
+  --animate-ring: ring 1.2s ease-out infinite;
+}
+
+@theme inline {
+  --font-sans: var(--font-b612), system-ui, sans-serif;
+  --font-mono: var(--font-b612-mono), ui-monospace, monospace;
+}
+
+@keyframes stamp {
+  from { transform: scale(1.35) rotate(-4deg); opacity: 0; }
+  to { transform: scale(1) rotate(-4deg); opacity: 1; }
+}
+
+@keyframes ring {
+  from { box-shadow: 0 0 0 0 rgb(106 170 232 / 0.55); }
+  to { box-shadow: 0 0 0 28px rgb(106 170 232 / 0); }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    --focus: var(--color-blue);
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+  .live {
+    --focus: var(--color-blue-bright);
+    background: var(--color-hangar);
+    color: #fff;
+  }
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  dialog::backdrop {
+    background: rgb(10 16 21 / 0.72);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff; }
+  }
+}
