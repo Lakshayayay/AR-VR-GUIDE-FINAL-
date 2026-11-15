@@ -1,6 +1,6 @@
 # ArGuide status
 
-**Last updated:** 2026-11-15 · **Branch:** `refurbish/nextjs-python` · **Last commit:** `599369b` (tag `pre-refactor`)
+**Last updated:** 2026-11-15 · **Branch:** `refurbish/nextjs-python` · **Last commit:** `1cdde67` (old app before the refurbish: tag `pre-refactor` = `599369b`)
 
 Read this first in every session. Rules for keeping it current are in [`AGENTS.md`](AGENTS.md). The design and its reasoning are in [`docs/REFURBISH_PLAN.md`](docs/REFURBISH_PLAN.md).
 
