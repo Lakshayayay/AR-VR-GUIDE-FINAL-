@@ -166,6 +166,8 @@ export function useCall(sessionId: number, side: Side) {
     rec.onstop = () => {
       void mix.close();
       video.getTracks().forEach((t) => t.stop());
+      // A call that ends before the first picture is captured leaves nothing: never save an empty file.
+      if (!parts.length) return toast("Nothing was recorded because the call ended too soon, so no recording was saved.");
       const blob = new Blob(parts, { type: type.split(";")[0] });
       upload(blob, "recording", type.includes("mp4") ? "call.mp4" : "call.webm").then(
         () => toast("Recording saved to the session."),
