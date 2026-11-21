@@ -2,10 +2,10 @@
 
 Date: 2026-11-15. Scope: full-stack only. **No AI in this phase.**
 
-> **History, not the current plan (2026-11-21).** Milestones M0 to M5 were built from this file; M6 is part done. What to do next is in [`PLAN.md`](PLAN.md). Parts of this file that no longer hold:
+> **History, not the current plan (2026-11-21).** Milestones M0 to M5 were built from this file; M6 is part done. What comes next is in [`STATUS.md`](../../STATUS.md); the AR and review-round plans are [`AR_CORE_PLAN.md`](AR_CORE_PLAN.md) and [`PLAN.md`](PLAN.md). The old app (`ArGuide/`) was removed and stays in git history under the tag `pre-refactor`. Parts of this file that no longer hold:
 > §1 "hand gestures parked"; §6 "Later" (gestures and sticky drawings are now the core, see [`AR_CORE_PLAN.md`](AR_CORE_PLAN.md)); §7.1 "Three.js stays"; §7.2 folder layout (no `routers/`, `migrations/` or `legacy/`; the old app stays in `ArGuide/`); §8 "hand-tracking model parked"; §10 "No AI" search (MediaPipe is allowed on the device). §13 is the record of what was really built.
 
-> This file is the design and the reasoning behind it. For where the work stands today, read [`STATUS.md`](../STATUS.md) at the repo root.
+> This file is the design and the reasoning behind it. For where the work stands today, read [`STATUS.md`](../../STATUS.md) at the repo root.
 
 ## 1. Context
 

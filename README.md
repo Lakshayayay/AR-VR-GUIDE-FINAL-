@@ -2,17 +2,18 @@
 
 Live remote help for aircraft maintenance. A technician points a phone camera at the job; a remote expert sees it, draws on it, walks through a checklist and signs it off. Every call is saved as a printable report.
 
-**Augmented reality:** drawings can follow the part under them as the camera moves. The technician can pinch to draw, or hold an open palm still briefly and then rub to erase portions of a drawing. Undo and Clear all are buttons; Guide shows or hides the hand outline. These features run on the device from locally served files. They have automated coverage, but real-hand and phone acceptance is still outstanding: see [`docs/AR_CORE_PLAN.md`](docs/AR_CORE_PLAN.md).
+**Augmented reality:** drawings can follow the part under them as the camera moves. The technician can pinch to draw, or hold an open palm still briefly and then rub to erase portions of a drawing. Undo and Clear all are buttons; Guide shows or hides the hand outline. These features run on the device from locally served files. They have automated coverage, but real-hand and phone acceptance is still outstanding: see [`docs/history/AR_CORE_PLAN.md`](docs/history/AR_CORE_PLAN.md).
 
 | Folder | What it is |
 |---|---|
 | `web/` | The screens (Next.js). Technician phone view, expert console, sessions, reports, admin |
 | `backend/` | The server (Python, FastAPI). Sign-in, saving, and the live link between the two sides |
-| `docs/` | The refurbish plan, competitor research and reference screenshots |
-| `ArGuide/` | The old app, kept until the new one is accepted. Not used by the new app |
+| `docs/` | `DEPLOYMENT.md` (single-address pilot and self-hosted relay setup) and `history/` (the finished plans: refurbish, AR core, review round) |
+| `deploy/` | Example Caddy, systemd and coturn files for the pilot deployment |
 | `STATUS.md` | Where the work stands today. Read this first |
 | `AGENTS.md` | Rules for AI coding agents, including what "wrap up" means |
-| `docs/DEPLOYMENT.md` | Reviewable single-address pilot deployment and self-hosted relay setup |
+
+The first version of the app (old Node server and two Vite apps) was removed on 2026-11-21. It stays in git history under the tag `pre-refactor`.
 
 ## Run it on your computer
 
@@ -30,7 +31,7 @@ npm run dev:api     # server on http://127.0.0.1:8000
 npm run dev:web     # screens on http://localhost:3000
 ```
 
-Open http://localhost:3000 and sign in. Add technicians and experts on the **People** page.
+Open http://localhost:3000 and sign in. Add technicians and experts on the **People** page. If port 3000 is already used by another program, start the screens with `cd web && npx next dev -p 3100` and open that address instead.
 
 ## Try a call without signing in (local testing only)
 

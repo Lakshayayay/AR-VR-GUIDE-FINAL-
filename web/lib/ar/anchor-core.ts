@@ -50,7 +50,7 @@ export interface Placement {
 /** Pictures are analysed at this size (longer side, pixels). Larger is steadier but slower on phones. */
 export const ANALYSIS_LONG_SIDE = 640;
 
-// Tuning knobs. Change with the test clips in hand (see docs/AR_CORE_PLAN.md, Stage 3).
+// Tuning knobs. Change with the test clips in hand (see docs/history/AR_CORE_PLAN.md, Stage 3).
 const MIN_ANCHOR_SIDE = 0.5; // anchor area at least this share of the picture's shorter side
 const MAX_PATCH_SIDE = 256; // the anchor picture is shrunk to this (it is also what is sent to the other side)
 const CORNERS = 150; // points per anchor picture

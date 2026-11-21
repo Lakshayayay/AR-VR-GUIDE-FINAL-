@@ -1,5 +1,5 @@
 // Hand gestures from finger positions: point, pinch to draw, open palm moved to rub out.
-// Pass marks: docs/AR_CORE_PLAN.md §12.
+// Pass marks: docs/history/AR_CORE_PLAN.md §12.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

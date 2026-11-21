@@ -4,7 +4,7 @@ These rules apply to every agent and every session (Claude Code reads them throu
 
 ## At the start of every session
 
-1. Read [`STATUS.md`](STATUS.md) in full. It is the single source of truth for where the work stands. Read [`docs/REFURBISH_PLAN.md`](docs/REFURBISH_PLAN.md) when you need the design or the reasoning behind it.
+1. Read [`STATUS.md`](STATUS.md) in full. It is the single source of truth for where the work stands. Finished plans are in [`docs/history/`](docs/history/) (`REFURBISH_PLAN.md` holds the design and the reasoning behind it); read them only when you need that background.
 2. Check for work that `STATUS.md` does not mention yet:
    ```bash
    git status --short
@@ -15,8 +15,9 @@ These rules apply to every agent and every session (Claude Code reads them throu
 ## While working
 
 - Keep `STATUS.md` true. When you finish a feature, fix a bug, or the owner makes a decision, update the matching section and the session log row for today.
-- Build new work in `web/` (Next.js 16) and `backend/` (Python). `ArGuide/` is the old prototype: don't change it, and don't delete it until the owner accepts the new app.
-- **No AI features in this phase** (no Gemini, Anthropic, OpenAI, defect detection, nothing in the cloud). The owner decided this. The AI phase starts only after they accept the refurbished stack. **One exception (owner, 2026-11-16):** the AR core may use on-device hand tracking (MediaPipe) and OpenCV.js, served from our own `web/public/vendor/`, never from the internet. Design: [`docs/AR_CORE_PLAN.md`](docs/AR_CORE_PLAN.md).
+- Build new work in `web/` (Next.js 16) and `backend/` (Python). The old prototype (`ArGuide/`) was removed on 2026-11-21, after the owner accepted the app; it stays in git history under the tag `pre-refactor`.
+- **No AI features until the owner starts the AI phase** (no Gemini, Anthropic, OpenAI, defect detection, nothing in the cloud). The owner accepted the refurbished app on 2026-11-21, but the next phase is full-stack product work, not AI. **One exception (owner, 2026-11-16):** the AR core may use on-device hand tracking (MediaPipe) and OpenCV.js, served from our own `web/public/vendor/`, never from the internet. Design: [`docs/history/AR_CORE_PLAN.md`](docs/history/AR_CORE_PLAN.md).
+- Work on a branch off `main` and bring it in through a pull request merged with a merge commit, so the separate commits stay in the history.
 - Nothing may call outside services while the app runs (closed-network ready). The default STUN server in `ICE_SERVERS` is the only exception.
 - Follow the "Flight line" design: tokens in `web/app/globals.css`, rules in `STATUS.md` §5. Live-call screens dark, everything else light. Status colours only for status. Text contrast ≥ 4.5:1. Technician buttons ≥ 56 px with a label.
 - Keep dependencies few. Prefer native HTML and the standard library. Add a package only for a real need, and say why.
@@ -50,7 +51,7 @@ Leave the project so that the next session (or a different agent) can pick it up
    - next steps (§8), with anything waiting on the owner marked clearly
    - a new session log row: what was done, what was decided, what is unfinished
    - the state of running servers or temporary data, and that temporary data is not kept
-3. **Update `docs/REFURBISH_PLAN.md` §13** if the work differed from the plan, and tick anything in §12 that is now done.
+3. **Plans:** a new piece of work gets its plan in `docs/`. When the work is done, move the plan to `docs/history/` and leave it as it was (don't rewrite history); the current state lives in `STATUS.md`.
 4. **Update `README.md` and the `.env.example` files** if how to run, test or configure the app changed.
 5. **Update this file** if the owner gave a new standing rule.
 6. Check the docs contain no secrets, real passwords or personal details. The demo password `demo-pass-1` is fine; it's only for throwaway test accounts.

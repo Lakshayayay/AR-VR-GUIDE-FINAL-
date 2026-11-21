@@ -1,6 +1,6 @@
-> Approved by the owner on 2026-11-16 ("implement the plan"). Build progress is in [`STATUS.md`](../STATUS.md); results of Stage 0 are at the end of this file.
+> Approved by the owner on 2026-11-16 ("implement the plan"). Build progress is in [`STATUS.md`](../../STATUS.md); results of Stage 0 are at the end of this file.
 >
-> **Partly superseded (2026-11-21).** Stages 0 to 2 were built; §15 and §16 record how. What to do next is in [`PLAN.md`](PLAN.md). Parts that no longer hold: §6 gesture table (palm-hold undo and wave-to-clear were replaced by buttons; rubbing now starts at once, not after a hold); §7 "outline replaced by a cursor" (the hand outline is back, with a Guide toggle); Stage 0 step 5 (the owner cannot supply phone clips).
+> **Partly superseded (2026-11-21).** Stages 0 to 2 were built; §15 and §16 record how. The review round that followed is in [`PLAN.md`](PLAN.md); what comes next is in [`STATUS.md`](../../STATUS.md). The old prototype (`ArGuide/`) was removed and stays in git history under the tag `pre-refactor`. Parts that no longer hold: §6 gesture table (palm-hold undo and wave-to-clear were replaced by buttons; rubbing now starts at once, not after a hold); §7 "outline replaced by a cursor" (the hand outline is back, with a Guide toggle); Stage 0 step 5 (the owner cannot supply phone clips).
 
 # ArGuide AR core: drawings that stick to the part + hands-free pinch drawing
 

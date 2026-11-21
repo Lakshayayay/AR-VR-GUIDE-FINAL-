@@ -1,5 +1,7 @@
 # Plan: make the AR core work the way you tested it (in phases, with checks)
 
+> **History (2026-11-21).** This review-round plan is done and the owner accepted the app. Where things stand and what comes next: [`STATUS.md`](../../STATUS.md). The old prototype mentioned below (`ArGuide/`) was removed; it stays in git history under the tag `pre-refactor`.
+
 ## Context
 
 You tried the current app on 2026-11-21: Brave, laptop webcam, `next dev` server, technician and expert pages. You reported:

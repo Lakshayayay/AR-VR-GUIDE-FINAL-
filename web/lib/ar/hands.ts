@@ -51,7 +51,7 @@ export type HandEvent =
   | { type: "erase-end" }
   | { type: "gone" };
 
-// Tuning knobs (test on the owner's phone; see docs/AR_CORE_PLAN.md Stage 3).
+// Tuning knobs (test on the owner's phone; see docs/history/AR_CORE_PLAN.md Stage 3).
 const PINCH_ON = 0.35; // finger gap / palm width below which a pinch starts
 const PINCH_OFF = 0.55; // ... and above which it ends (the gap between the two stops broken lines)
 // Counted in pictures, not milliseconds, so a slow phone (few hand results a second) behaves like a fast one:

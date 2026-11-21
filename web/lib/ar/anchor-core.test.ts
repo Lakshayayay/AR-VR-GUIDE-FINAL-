@@ -1,6 +1,6 @@
 // Tracker accuracy, measured against a synthetic textured panel filmed by a virtual camera.
 // The camera's motion is known exactly, so the true position of every anchor is known.
-// Run: npm test (from web/).   Pass marks are in docs/AR_CORE_PLAN.md §12 (pixels at 480 wide).
+// Run: npm test (from web/).   Pass marks are in docs/history/AR_CORE_PLAN.md §12 (pixels at 480 wide).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
