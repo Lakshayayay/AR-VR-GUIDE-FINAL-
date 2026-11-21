@@ -72,7 +72,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       availableRef.current = localStorage.getItem(AVAILABLE_KEY) !== "false";
     } catch {}
     setAvailableState(availableRef.current);
-    unlockAudio();
     const tell = () => socket.emit("expert:available", { on: availableRef.current });
     socket.on("connect", tell);
     if (socket.connected) tell();
@@ -122,6 +121,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!incoming) return;
+    unlockAudio();
     ringOnce();
     const t = setInterval(ringOnce, 2500);
     return () => clearInterval(t);

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-provider";
-import { capture, type Point, type Shape } from "@/lib/annotations";
+import { applyErase, capture, undoErase, type EraseChange, type Point, type Shape } from "@/lib/annotations";
 import { api } from "@/lib/api";
+import { drawingLifetime } from "@/lib/drawing-lifetime";
 import type { Person, Session, SessionEvent, SignOff, StepResult } from "@/lib/types";
 import { createPeer, watchQuality, type Peer, type Quality, type Signal } from "@/lib/webrtc";
 
@@ -17,7 +18,9 @@ interface JoinReply {
   steps: StepResult[];
   events: SessionEvent[];
   shapes?: Shape[];
+  history?: { kind: "shape" | "erase"; id: string }[];
   frozen?: boolean;
+  hands?: boolean;
   peers?: (Person & { role: string })[];
 }
 
@@ -29,6 +32,7 @@ export function useCall(sessionId: number, side: Side) {
   const [error, setError] = useState("");
   const [shapes, setShapes] = useState<Record<string, Shape>>({});
   const [frozen, setFrozen] = useState(false);
+  const [hands, setHandsOn] = useState(true); // hands-free drawing on the technician's phone
   const [pointer, setPointer] = useState<Point | null>(null);
   const [steps, setSteps] = useState<Record<number, StepResult>>({});
   const [events, setEvents] = useState<SessionEvent[]>([]);
@@ -49,8 +53,10 @@ export function useCall(sessionId: number, side: Side) {
   const otherRef = useRef<Person | null>(null);
   const shapesRef = useRef(shapes);
   shapesRef.current = shapes;
-  const mine = useRef<string[]>([]);
+  const mine = useRef<{ kind: "shape" | "erase"; id: string }[]>([]);
+  const lifetime = useRef(drawingLifetime());
   const recorder = useRef<MediaRecorder | null>(null);
+  const evidenceRef = useRef<HTMLCanvasElement | null>(null);
   // Set-up messages are handled one at a time, and only once camera/microphone and network settings are ready.
   const ice = useRef<RTCIceServer[]>([]);
   const settled = useRef(false);
@@ -144,19 +150,22 @@ export function useCall(sessionId: number, side: Side) {
   };
 
   const startRecording = () => {
-    const video = remoteRef.current?.getVideoTracks() ?? [];
-    if (!video.length) return toast("There is no video to record yet.");
+    const canvas = evidenceRef.current;
+    if (!canvas?.width || !canvas.height || !canvas.captureStream) return toast("There is no picture to record yet.");
+    const type = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
+    if (!type) return toast("Recording is not supported by this browser.");
+    const video = canvas.captureStream(30);
     const mix = new AudioContext();
     const out = mix.createMediaStreamDestination();
     for (const s of [remoteRef.current, localRef.current]) {
       if (s?.getAudioTracks().length) mix.createMediaStreamSource(s).connect(out);
     }
-    const type = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t))!;
-    const rec = new MediaRecorder(new MediaStream([...video, ...out.stream.getAudioTracks()]), { mimeType: type });
+    const rec = new MediaRecorder(new MediaStream([...video.getVideoTracks(), ...out.stream.getAudioTracks()]), { mimeType: type });
     const parts: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && parts.push(e.data);
     rec.onstop = () => {
       void mix.close();
+      video.getTracks().forEach((t) => t.stop());
       const blob = new Blob(parts, { type: type.split(";")[0] });
       upload(blob, "recording", type.includes("mp4") ? "call.mp4" : "call.webm").then(
         () => toast("Recording saved to the session."),
@@ -178,8 +187,8 @@ export function useCall(sessionId: number, side: Side) {
   };
 
   // Listener code runs long after this render; keep it pointing at the latest functions.
-  const latest = useRef({ run, offer, onSignal, startRecording, stopMedia });
-  latest.current = { run, offer, onSignal, startRecording, stopMedia };
+  const latest = useRef({ run, offer, onSignal, startRecording, stopRecording, stopMedia });
+  latest.current = { run, offer, onSignal, startRecording, stopRecording, stopMedia };
 
   // ---------- live connection ----------
 
@@ -203,14 +212,18 @@ export function useCall(sessionId: number, side: Side) {
         setSteps(Object.fromEntries(r.steps.map((s) => [s.step, s])));
         setEvents(r.events);
         setSignedOff(r.session.signedOff);
+        lifetime.current.reconcile((r.shapes ?? []).map((s) => s.id));
+        mine.current = r.history ?? [];
         setShapes(Object.fromEntries((r.shapes ?? []).map((s) => [s.id, s])));
         setFrozen(!!r.frozen);
+        setHandsOn(r.hands ?? true);
         if (r.session.status === "waiting") setPhase("waiting");
         else if (r.session.status === "active") {
           setPhase((ph) => (ph === "live" ? "live" : "connecting"));
           meetOther(r.peers?.[0] ?? null, false);
         } else {
           setPhase("ended");
+          f().stopRecording();
           f().stopMedia();
         }
       } catch {
@@ -228,6 +241,7 @@ export function useCall(sessionId: number, side: Side) {
       "call:ended": ({ status, by }: { status: Session["status"]; by: Person }) => {
         setSession((s) => s && { ...s, status });
         setPhase("ended");
+        f().stopRecording();
         f().stopMedia();
         if (by.id !== me.id && status === "ended") toast(`${by.name} ended the call.`);
       },
@@ -237,11 +251,24 @@ export function useCall(sessionId: number, side: Side) {
         setOther(null);
       },
       signal: ({ data }: { data: Signal }) => f().run(() => f().onSignal(data)),
-      "ann:put": ({ shape }: { shape: Shape }) => setShapes((s) => ({ ...s, [shape.id]: shape })),
-      "ann:remove": ({ id }: { id: string }) => setShapes(({ [id]: _, ...rest }) => rest),
-      "ann:clear": () => setShapes({}),
+      // A drawing's anchor is sent once; later updates without one keep it.
+      "ann:put": ({ shape }: { shape: Shape }) => {
+        if (lifetime.current.put(shape.id)) setShapes((s) => ({ ...s, [shape.id]: { ...s[shape.id], ...shape } }));
+      },
+      "ann:remove": ({ id }: { id: string }) => {
+        lifetime.current.remove(id);
+        setShapes(({ [id]: _, ...rest }) => rest);
+      },
+      "ann:clear": () => {
+        lifetime.current.clear();
+        mine.current = [];
+        setShapes({});
+      },
+      "ann:erase": ({ opId, changes }: { opId: string; changes: EraseChange[] }) => setShapes((s) => applyErase(s, opId, changes)),
+      "ann:erase:undo": ({ opId }: { opId: string }) => setShapes((s) => undoErase(s, opId)),
       pointer: (d) => setPointer(d.off ? null : [d.x, d.y]),
       freeze: (d) => setFrozen(!!d.frozen),
+      hands: (d) => setHandsOn(!!d.on),
       "step:update": (r) =>
         setSteps(({ [r.step]: _, ...rest }) => (r.status ? { ...rest, [r.step]: r } : rest)),
       "signoff:update": (s: SignOff) => setSignedOff(s),
@@ -260,6 +287,7 @@ export function useCall(sessionId: number, side: Side) {
     if (socket.connected) void join();
     return () => {
       for (const [event, fn] of Object.entries(handlers)) socket.off(event, fn);
+      f().stopRecording();
       socket.emit("session:leave", { sessionId });
     };
   }, [socket, sessionId, side, me.id, toast]);
@@ -286,22 +314,38 @@ export function useCall(sessionId: number, side: Side) {
   };
 
   return {
-    me, session, phase, error, local, remote, mediaError, other, link, quality,
-    shapes: Object.values(shapes), frozen, pointer, steps, events, signedOff, recording, consentAsked,
+    me, session, phase, error, local, remote, mediaError, other, link, quality, evidenceRef,
+    shapes: Object.values(shapes), frozen, hands, pointer, steps, events, signedOff, recording, consentAsked,
 
     putShape(shape: Shape) {
-      if (!mine.current.includes(shape.id)) mine.current.push(shape.id);
-      setShapes((s) => ({ ...s, [shape.id]: shape }));
+      if (!lifetime.current.put(shape.id)) return;
+      if (!mine.current.some((a) => a.kind === "shape" && a.id === shape.id)) mine.current.push({ kind: "shape", id: shape.id });
+      setShapes((s) => ({ ...s, [shape.id]: { ...s[shape.id], ...shape } }));
       socket.emit("ann:put", { sessionId, shape });
     },
     undo() {
-      let id = mine.current.pop();
-      while (id && !shapesRef.current[id]) id = mine.current.pop();
-      if (!id) return;
-      setShapes(({ [id]: _, ...rest }) => rest);
-      socket.emit("ann:remove", { sessionId, id });
+      let action = mine.current.pop();
+      while (action?.kind === "shape" && !shapesRef.current[action.id]) action = mine.current.pop();
+      if (!action) return;
+      if (action.kind === "erase") {
+        socket.emit("ann:erase:undo", { sessionId, opId: action.id }, (r: { ok: boolean }) => {
+          if (!r?.ok) toast("Could not undo the rubbing. Try again.");
+        });
+        return;
+      }
+      lifetime.current.remove(action.id);
+      setShapes(({ [action.id]: _, ...rest }) => rest);
+      socket.emit("ann:remove", { sessionId, id: action.id });
+    },
+    erase(opId: string, batch: number, changes: EraseChange[]) {
+      if (!changes.length) return;
+      if (!mine.current.some((a) => a.kind === "erase" && a.id === opId)) mine.current.push({ kind: "erase", id: opId });
+      socket.emit("ann:erase", { sessionId, opId, batch, changes }, (r: { ok: boolean }) => {
+        if (!r?.ok) toast("Could not erase that area. Check your connection.");
+      });
     },
     clear() {
+      lifetime.current.clear();
       mine.current = [];
       setShapes({});
       socket.emit("ann:clear", { sessionId });
@@ -313,13 +357,18 @@ export function useCall(sessionId: number, side: Side) {
       setFrozen(on);
       socket.emit("freeze", { sessionId, frozen: on });
     },
+    setHands(on: boolean) {
+      setHandsOn(on);
+      socket.emit("hands", { sessionId, on });
+    },
     setStep: (step: number, status: "done" | "problem" | null, note = "") => ask("step:set", { step, status, note }),
     signOff: () => ask("signoff", {}),
     send: (kind: "chat" | "note", text: string) => ask("msg", { kind, text }),
-    async takePhoto(video: HTMLVideoElement | null) {
-      if (!video?.videoWidth) return toast("There is no picture to save yet.");
+    async takePhoto() {
+      const canvas = evidenceRef.current;
+      if (!canvas?.width || !canvas.height) return toast("There is no picture to save yet.");
       try {
-        const blob = await capture(video, Object.values(shapesRef.current), getComputedStyle(document.body).fontFamily);
+        const blob = await capture(canvas);
         await upload(blob, "photo", "photo.jpg");
         toast("Photo saved to the session.");
       } catch {

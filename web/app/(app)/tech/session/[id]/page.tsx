@@ -1,15 +1,18 @@
 "use client";
 
-import { Camera, Flashlight, MessageSquare, Mic, MicOff, Pencil, SwitchCamera, Undo2 } from "lucide-react";
+import { Camera, Flashlight, Hand, MessageSquare, Mic, MicOff, Pencil, SwitchCamera, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-provider";
-import { SignalBars, Stage } from "@/components/call/stage";
+import { SignalBars, Stage, TRACKING_NOTICE, type HandPen, type TrackingNotice } from "@/components/call/stage";
 import { useCall } from "@/components/call/use-call";
 import { Button, Dialog } from "@/components/ui";
 import { Messages, StepCard } from "@/components/work";
-import { TECH_COLOUR } from "@/lib/annotations";
+import { newShapeId, TECH_COLOUR, type Placements } from "@/lib/annotations";
+import { isOpenHand } from "@/lib/ar/hands";
+import { useHands } from "@/lib/ar/use-hands";
+import { cue } from "@/lib/ring";
 import { clock, since, useNow } from "@/lib/format";
 
 const RING_SECONDS = 45;
@@ -22,6 +25,14 @@ export default function TechnicianCall() {
   const now = useNow();
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const placements = useRef<Placements>({});
+  const pen = useRef<HandPen>(null);
+  const handDrawing = useRef(false);
+  const rubbing = useRef<{ id: string; batch: number } | null>(null);
+  const [handMode, setHandMode] = useState(""); // what the computer sees the hand doing, in words
+  const [showHand, setShowHand] = useState(true);
+  const [eraseReady, setEraseReady] = useState(false);
+  const [notice, setNotice] = useState<TrackingNotice>("");
   const [muted, setMuted] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -42,6 +53,13 @@ export default function TechnicianCall() {
   useEffect(() => {
     if (audioRef.current) audioRef.current.srcObject = call.remote;
   }, [call.remote]);
+  useEffect(() => {
+    if (!call.shapes.length && rubbing.current) {
+      rubbing.current = null;
+      pen.current?.endRub();
+      setEraseReady(false);
+    }
+  }, [call.shapes.length]);
 
   // Nobody answered in time: record it as missed.
   useEffect(() => {
@@ -83,6 +101,52 @@ export default function TechnicianCall() {
     }
   };
 
+  // Hands-free: pinch to draw; move an open palm over a drawing to rub it out.
+  // Sounds and a buzz tell the technician what happened, because a mounted phone's screen is out of sight.
+  const hands = useHands(videoRef, call.hands && phase === "live" && !call.frozen, (events, area, hand, capturedAt) => {
+    pen.current?.mask(area);
+    pen.current?.hand(hand?.landmarks ?? null);
+    for (const e of events) {
+      if (e.type === "point") {
+        pen.current?.cursor(e.at);
+        call.sendPointer(e.at);
+      } else if (e.type === "draw-start") {
+        handDrawing.current = true;
+        pen.current?.start(e.at);
+        cue("start");
+        navigator.vibrate?.(30);
+      } else if (e.type === "draw-move") pen.current?.move(e.at, capturedAt);
+      else if (e.type === "draw-end") {
+        if (handDrawing.current) {
+          handDrawing.current = false;
+          pen.current?.end();
+          cue("end");
+        }
+      } else if (e.type === "erase-ready") {
+        rubbing.current = { id: newShapeId(call.me.id), batch: 0 };
+        setEraseReady(true);
+        cue("erase-ready");
+        navigator.vibrate?.([30, 60, 30]);
+      } else if (e.type === "erase-move") {
+        const active = rubbing.current;
+        const changes = pen.current?.rub(e.at, e.radius, capturedAt) ?? [];
+        if (active) for (let i = 0; i < changes.length && active.batch < 1000; i += 100) {
+          call.erase(active.id, active.batch++, changes.slice(i, i + 100));
+        }
+      } else if (e.type === "erase-end") {
+        rubbing.current = null;
+        pen.current?.endRub();
+        setEraseReady(false);
+      } else if (e.type === "gone") {
+        pen.current?.cursor(null);
+        call.sendPointer(null);
+      }
+    }
+    // Say what is seen (the state only changes when the words do, so this does not re-draw the page every picture).
+    setHandMode(!hand ? "" : handDrawing.current ? "Drawing" : rubbing.current ? "Rubbing" : isOpenHand(hand.landmarks) ? "Open hand" : "Hand seen");
+  });
+  const handsLabel = !call.hands ? "Hands off" : hands.status === "failed" ? "No hands" : handMode || "Hands on";
+
   const linkDown = phase === "live" && (!call.other || call.link === "disconnected" || call.link === "failed");
   const hasSteps = !!session?.checklist?.steps.length;
 
@@ -99,6 +163,16 @@ export default function TechnicianCall() {
         colour={TECH_COLOUR}
         author={call.me.id}
         onPut={call.putShape}
+        onWeakAnchor={() => {
+          toast("Not enough detail to keep that drawing attached. Try near a label or edge.");
+          cue("warning");
+          navigator.vibrate?.([80, 80, 80]);
+        }}
+        placementsRef={placements}
+        evidenceRef={call.evidenceRef}
+        showHand={showHand}
+        onNotice={setNotice}
+        penRef={pen}
         label="Your camera"
       />
       <audio ref={audioRef} autoPlay />
@@ -119,6 +193,22 @@ export default function TechnicianCall() {
           <span className="rounded-lg bg-hangar/85 p-3">
             <SignalBars quality={call.quality} />
           </span>
+          <button
+            onClick={() => setShowHand(!showHand)}
+            aria-pressed={showHand}
+            className={`flex min-h-14 min-w-14 flex-col items-center justify-center gap-1 rounded-xl px-2 text-xs font-bold ${showHand ? "bg-white text-ink" : "bg-hangar/85"}`}
+          >
+            <Hand aria-hidden className="size-6" />
+            Guide
+          </button>
+          <button
+            onClick={() => call.setHands(!call.hands)}
+            aria-pressed={call.hands}
+            className={`flex min-h-14 min-w-14 flex-col items-center justify-center gap-1 rounded-xl px-2 text-xs font-bold ${call.hands ? "bg-white text-ink" : "bg-hangar/85"}`}
+          >
+            <Hand aria-hidden className="size-6" />
+            {handsLabel}
+          </button>
           {canTorch && (
             <button onClick={toggleTorch} aria-pressed={torch} aria-label="Light" className={`grid size-14 place-items-center rounded-xl ${torch ? "bg-white text-ink" : "bg-hangar/85"}`}>
               <Flashlight aria-hidden className="size-6" />
@@ -132,6 +222,8 @@ export default function TechnicianCall() {
         {call.frozen && <p className="rounded-lg bg-advisory px-3 py-2 font-bold text-ink">Picture frozen by {expertName}. Hold still.</p>}
         {linkDown && <p className="rounded-lg bg-caution px-3 py-2 font-bold text-ink">Connection lost. Reconnecting…</p>}
         {phase === "connecting" && <p className="rounded-lg bg-hangar/85 px-3 py-2">Connecting to {expertName}…</p>}
+        {eraseReady && <p className="rounded-lg bg-hangar/85 px-3 py-2">Rubbing out…</p>}
+        {notice && <p className="rounded-lg bg-hangar/85 px-3 py-2">{TRACKING_NOTICE[notice]}</p>}
       </div>
 
       {/* Bottom: step card, then controls */}
@@ -147,16 +239,23 @@ export default function TechnicianCall() {
           {drawing && (
             <div className="flex items-center justify-between gap-2 rounded-lg bg-hangar/85 px-3 py-2">
               <p className="text-sm">Draw on the picture with your finger.</p>
-              <Button onClick={call.undo}>
+              <Button size="lg" onClick={call.undo}>
                 <Undo2 aria-hidden className="size-4" /> Undo
               </Button>
+              <Button size="lg" onClick={call.clear}>Clear all</Button>
+            </div>
+          )}
+          {call.shapes.length > 0 && !drawing && (
+            <div className="flex gap-2">
+              <Button size="lg" onClick={call.undo}><Undo2 aria-hidden className="size-4" /> Undo</Button>
+              <Button size="lg" onClick={call.clear}>Clear all</Button>
             </div>
           )}
           <div className="grid grid-cols-5 gap-2">
             <Control label={muted ? "Muted" : "Mute"} pressed={muted} onClick={() => setMuted(!muted)} icon={muted ? MicOff : Mic} />
             <Control label="Flip" onClick={flip} icon={SwitchCamera} />
             <Control label="Draw" pressed={drawing} onClick={() => setDrawing(!drawing)} icon={Pencil} />
-            <Control label="Photo" onClick={() => call.takePhoto(videoRef.current)} icon={Camera} />
+            <Control label="Photo" onClick={() => call.takePhoto()} icon={Camera} />
             <Control
               label={unread ? `Chat (${unread})` : "Chat"}
               onClick={() => {

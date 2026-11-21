@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Camera, Circle, Disc, Eraser, MousePointer2, MoveUpRight, Pause, Pencil, Play, Square, Type, Undo2, Volume2, VolumeX, Mic, MicOff,
+  Camera, Circle, Disc, Eraser, Hand, MousePointer2, MoveUpRight, Pause, Pencil, Play, Square, Type, Undo2, Volume2, VolumeX, Mic, MicOff,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -11,7 +11,7 @@ import { SignalBars, Stage } from "@/components/call/stage";
 import { useCall } from "@/components/call/use-call";
 import { Button } from "@/components/ui";
 import { ChecklistPanel, Media, Messages } from "@/components/work";
-import { EXPERT_COLOURS, type Tool } from "@/lib/annotations";
+import { EXPERT_COLOURS, type Placements, type Tool } from "@/lib/annotations";
 import { api } from "@/lib/api";
 import { clock, since, useNow } from "@/lib/format";
 import type { SessionDetail } from "@/lib/types";
@@ -79,9 +79,10 @@ type Tab = "checklist" | "chat" | "notes" | "photos";
 
 function Console({ sessionId }: { sessionId: number }) {
   const call = useCall(sessionId, "expert");
-  const { queue } = useApp();
+  const { queue, toast } = useApp();
   const now = useNow();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const placements = useRef<Placements>({});
   const [tool, setTool] = useState<Tool | "pointer" | null>("arrow");
   const [colour, setColour] = useState(EXPERT_COLOURS[0].value);
   const [micOn, setMicOn] = useState(true);
@@ -147,12 +148,15 @@ function Console({ sessionId }: { sessionId: number }) {
             muted={!speakerOn}
             frozen={call.frozen}
             shapes={call.shapes}
-            pointer={null}
+            pointer={call.pointer}
             tool={live ? tool : null}
             colour={colour}
             author={call.me.id}
             onPut={call.putShape}
             onPointer={call.sendPointer}
+            placementsRef={placements}
+            evidenceRef={call.evidenceRef}
+            onWeakAnchor={() => toast("Not enough detail here to hold the drawing. Freeze the picture, or draw near an edge or a label.")}
             label={`Camera of ${session?.technician.name ?? "the technician"}`}
           >
             <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-2" aria-live="polite">
@@ -208,7 +212,8 @@ function Console({ sessionId }: { sessionId: number }) {
           </div>
           <div className="flex flex-wrap gap-1">
             <ToolButton label={call.frozen ? "Resume" : "Freeze"} icon={call.frozen ? Play : Pause} pressed={call.frozen} onClick={() => call.setFreeze(!call.frozen)} />
-            <ToolButton label="Photo" icon={Camera} onClick={() => call.takePhoto(videoRef.current)} />
+            <ToolButton label="Hand drawing" icon={Hand} pressed={call.hands} onClick={() => call.setHands(!call.hands)} disabled={!live} />
+            <ToolButton label="Photo" icon={Camera} onClick={() => call.takePhoto()} />
             <ToolButton
               label={call.recording === "on" ? "Stop recording" : "Record"}
               icon={Disc}
