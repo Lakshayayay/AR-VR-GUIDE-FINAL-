@@ -1,0 +1,16 @@
+[Unit]
+Description=ArGuide Python API
+After=network.target
+
+[Service]
+Type=simple
+User=arguide
+Group=arguide
+WorkingDirectory=/opt/arguide/backend
+EnvironmentFile=/etc/arguide.env
+ExecStart=/opt/arguide/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
