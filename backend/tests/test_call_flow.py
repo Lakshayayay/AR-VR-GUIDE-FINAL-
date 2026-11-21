@@ -99,6 +99,87 @@ def test_whole_call(base_url):
     asyncio.run(_whole_call(base_url))
 
 
+def test_late_drawing_updates_do_not_restore_removed_or_cleared_shapes(base_url):
+    async def run():
+        tech = Person(base_url, "tech")
+        await tech.connect()
+        sid = (await tech.sio.call("call:start", {}))["session"]["id"]
+        await tech.sio.call("session:join", {"sessionId": sid})
+        shape = {"id": "late-1", "tool": "pen", "points": [[0.1, 0.1], [0.2, 0.2]]}
+        await tech.sio.call("ann:put", {"sessionId": sid, "shape": shape})
+        await tech.sio.call("ann:remove", {"sessionId": sid, "id": shape["id"]})
+        await tech.sio.call("ann:put", {"sessionId": sid, "shape": {**shape, "anchor": {"img": "late"}}})
+        assert (await tech.sio.call("session:join", {"sessionId": sid}))["shapes"] == []
+
+        shape["id"] = "late-2"
+        await tech.sio.call("ann:put", {"sessionId": sid, "shape": shape})
+        await tech.sio.call("ann:clear", {"sessionId": sid})
+        await tech.sio.call("ann:put", {"sessionId": sid, "shape": shape})
+        assert (await tech.sio.call("session:join", {"sessionId": sid}))["shapes"] == []
+        await tech.sio.call("call:end", {"sessionId": sid})
+        await tech.sio.disconnect()
+    asyncio.run(run())
+
+
+def test_partial_erasing_is_shared_deduplicated_and_undoable(base_url):
+    async def run():
+        tech, expert, stranger = Person(base_url, "tech"), Person(base_url, "expert"), Person(base_url, "tech2")
+        for person in (tech, expert, stranger):
+            await person.connect()
+        sid = (await tech.sio.call("call:start", {}))["session"]["id"]
+        await tech.sio.call("session:join", {"sessionId": sid})
+        await expert.sio.call("call:accept", {"sessionId": sid})
+        await expert.sio.call("session:join", {"sessionId": sid})
+        shape = {"id": "erase-test", "tool": "pen", "points": [[0.1, 0.5], [0.9, 0.5]]}
+        await expert.sio.call("ann:put", {"sessionId": sid, "shape": shape})
+        polygon = [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]
+        message = {"sessionId": sid, "opId": "rub-1", "batch": 0, "changes": [{"id": shape["id"], "polygon": polygon}]}
+        assert (await tech.sio.call("ann:erase", message, timeout=1))["ok"]
+        assert (await expert.wait_for("ann:erase"))["changes"][0]["polygon"] == polygon
+        assert (await tech.sio.call("ann:erase", message))["ok"]
+        await expert.sio.call("ann:put", {"sessionId": sid, "shape": shape})
+        rejoined = await tech.sio.call("session:join", {"sessionId": sid})
+        assert rejoined["history"][-1] == {"kind": "erase", "id": "rub-1"}
+        assert not (await expert.sio.call("session:join", {"sessionId": sid}))["history"][-1]["kind"] == "erase"
+        saved = rejoined["shapes"][0]
+        assert saved["erasures"]["rub-1"] == [polygon]
+        assert not (await stranger.sio.call("ann:erase", message))["ok"]
+        assert not (await expert.sio.call("ann:erase:undo", {"sessionId": sid, "opId": "rub-1"}))["ok"]
+        assert (await tech.sio.call("ann:erase:undo", {"sessionId": sid, "opId": "rub-1"}))["ok"]
+        assert (await expert.wait_for("ann:erase:undo"))["opId"] == "rub-1"
+        assert not (await tech.sio.call("ann:erase", {**message, "batch": 1}))["ok"]
+        saved = (await tech.sio.call("session:join", {"sessionId": sid}))["shapes"][0]
+        assert not saved.get("erasures")
+        await tech.sio.call("call:end", {"sessionId": sid})
+        for person in (tech, expert, stranger):
+            await person.sio.disconnect()
+    asyncio.run(run())
+
+
+def test_erasing_limits_do_not_partially_modify_drawings(base_url, monkeypatch):
+    from app import realtime
+    monkeypatch.setattr(realtime, "MAX_ERASE_POLYGONS", 1)
+
+    async def run():
+        tech = Person(base_url, "tech")
+        await tech.connect()
+        sid = (await tech.sio.call("call:start", {}))["session"]["id"]
+        await tech.sio.call("session:join", {"sessionId": sid})
+        shape = {"id": "limit-test", "tool": "pen", "points": [[0.1, 0.5], [0.9, 0.5]]}
+        await tech.sio.call("ann:put", {"sessionId": sid, "shape": shape})
+        p = [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6]]
+        change = {"id": shape["id"], "polygon": p}
+        rejected = await tech.sio.call("ann:erase", {"sessionId": sid, "opId": "too-big", "batch": 0, "changes": [change, change]})
+        assert not rejected["ok"]
+        assert not (await tech.sio.call("session:join", {"sessionId": sid}))["shapes"][0].get("erasures")
+        assert (await tech.sio.call("ann:erase", {"sessionId": sid, "opId": "one", "batch": 0, "changes": [change]}))["ok"]
+        assert (await tech.sio.call("ann:erase:undo", {"sessionId": sid, "opId": "one"}))["ok"]
+        assert (await tech.sio.call("ann:erase", {"sessionId": sid, "opId": "two", "batch": 0, "changes": [change]}))["ok"]
+        await tech.sio.call("call:end", {"sessionId": sid})
+        await tech.sio.disconnect()
+    asyncio.run(run())
+
+
 async def _whole_call(base_url):
     tech, expert, stranger = Person(base_url, "tech"), Person(base_url, "expert"), Person(base_url, "tech2")
     for p in (tech, expert, stranger):
@@ -145,6 +226,41 @@ async def _whole_call(base_url):
     # Someone who reconnects gets the drawings and freeze state back.
     rejoin = await tech.sio.call("session:join", {"sessionId": sid})
     assert [s["id"] for s in rejoin["shapes"]] == ["a1"] and rejoin["frozen"] is True
+
+    # A drawing's anchor (the picture under it, so it can follow the camera) is sent once;
+    # later updates without it keep it, and it comes back on rejoin.
+    anchor = {"img": "data:image/jpeg;base64," + "A" * 1000, "box": {"x": 0.1, "y": 0.1, "w": 0.4, "h": 0.4}}
+    await expert.sio.emit("ann:put", {"sessionId": sid, "shape": {**shape, "anchor": anchor}})
+    await expert.sio.emit("ann:put", {"sessionId": sid, "shape": {**shape, "points": [[0.1, 0.1], [0.6, 0.6]]}})
+    assert (await tech.wait_for("ann:put"))["shape"]["anchor"] == anchor
+    await tech.wait_for("ann:put")
+    kept = (await tech.sio.call("session:join", {"sessionId": sid}))["shapes"][0]
+    assert kept["anchor"] == anchor and kept["points"][1] == [0.6, 0.6]
+    # An oversized anchor is not passed on or kept; the drawing still shows.
+    await expert.sio.emit("ann:put", {"sessionId": sid, "shape": {**shape, "anchor": {"img": "x" * 60000, "box": anchor["box"]}}})
+    assert (await tech.wait_for("ann:put"))["shape"].get("anchor") is None
+    assert (await tech.sio.call("session:join", {"sessionId": sid}))["shapes"][0]["anchor"] == anchor
+
+    # Hand exclusion metadata must be numeric and bounded before it reaches OpenCV.
+    bad_anchor = {**anchor, "exclude": {"x": "bad", "y": 0, "w": 1, "h": 1}}
+    await expert.sio.call("ann:put", {"sessionId": sid, "shape": {**shape, "anchor": bad_anchor}})
+    sanitized = (await tech.wait_for("ann:put"))["shape"]["anchor"]
+    assert "exclude" not in sanitized and sanitized["img"] == anchor["img"]
+
+    # The drawing's own area (focus) is checked the same way: a good one passes through, a bad one is dropped.
+    good_focus = {"x": 0.2, "y": 0.2, "w": 0.2, "h": 0.2}
+    await expert.sio.call("ann:put", {"sessionId": sid, "shape": {**shape, "anchor": {**anchor, "focus": good_focus}}})
+    assert (await tech.wait_for("ann:put"))["shape"]["anchor"]["focus"] == good_focus
+    for bad in ({"x": "bad", "y": 0, "w": 1, "h": 1}, {"x": 0, "y": 0, "w": 0, "h": 1}, {"x": 0, "y": 0, "w": 1e9, "h": 1}, "oops"):
+        await expert.sio.call("ann:put", {"sessionId": sid, "shape": {**shape, "anchor": {**anchor, "focus": bad}}})
+        got = (await tech.wait_for("ann:put"))["shape"]["anchor"]
+        assert "focus" not in got and got["img"] == anchor["img"], bad
+
+    # Hand drawing starts on; the expert can switch it off, and a rejoin remembers that.
+    assert (await tech.sio.call("session:join", {"sessionId": sid}))["hands"] is True
+    await expert.sio.emit("hands", {"sessionId": sid, "on": False})
+    assert (await tech.wait_for("hands"))["on"] is False
+    assert (await tech.sio.call("session:join", {"sessionId": sid}))["hands"] is False
 
     # Checklist, chat and sign-off are saved.
     steps = session["checklist"]["steps"]

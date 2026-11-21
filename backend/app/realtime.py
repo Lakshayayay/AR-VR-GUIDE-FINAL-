@@ -5,6 +5,7 @@ each call has its own private room, and pointer + freeze are now relayed.
 """
 
 from datetime import timedelta
+import math
 
 import socketio
 from socketio.exceptions import ConnectionRefusedError
@@ -23,6 +24,8 @@ EXPERT_ROLES = ("expert", "admin")
 RING_LIMIT = timedelta(seconds=60)  # a call nobody answers in this time counts as missed
 ABANDON_AFTER = 120  # seconds a live call may sit with nobody connected (closed browser) before it is ended
 MAX_SHAPES = 500
+MAX_ANCHOR_CHARS = 40_000  # the small grey picture a drawing is anchored to (data: URL); bigger ones are dropped
+MAX_ERASE_POLYGONS = 10_000  # bound the in-memory cutouts and their rendering cost per call
 
 # ponytail: live state is kept in this one process, which is enough for one site.
 # To run several server processes, add Redis and socketio.AsyncRedisManager.
@@ -35,7 +38,7 @@ def room_name(session_id: int) -> str:
 
 
 def live(session_id: int) -> dict:
-    return rooms.setdefault(session_id, {"shapes": {}, "ids": set(), "frozen": False, "members": {}, "left_at": None})
+    return rooms.setdefault(session_id, {"shapes": {}, "ids": set(), "erase_ops": {}, "erase_count": 0, "actions": [], "frozen": False, "hands": True, "members": {}, "left_at": None})
 
 
 def as_int(value) -> int | None:
@@ -216,7 +219,8 @@ async def session_join(sid, data):
         await sio.enter_room(sid, room_name(session_id))
         await sio.emit("peer:joined", {"user": client["user"]}, room=room_name(session_id), skip_sid=sid)
     peers = [clients[other]["user"] for other in state["members"] if other != sid and other in clients]
-    return reply | {"shapes": list(state["shapes"].values()), "frozen": state["frozen"], "peers": peers}
+    history = [{"kind": a["kind"], "id": a["id"]} for a in state["actions"] if a["author"] == client["user"]["id"]]
+    return reply | {"shapes": list(state["shapes"].values()), "history": history, "frozen": state["frozen"], "hands": state["hands"], "peers": peers}
 
 
 @sio.on("session:leave")
@@ -249,8 +253,15 @@ async def call_end(sid, data):
 
 # ---------- relayed as-is to the other person in the call ----------
 
-RELAYED = ("signal", "pointer", "ann:put", "ann:remove", "ann:clear", "freeze",
+RELAYED = ("signal", "pointer", "ann:put", "ann:remove", "ann:clear", "freeze", "hands",
            "record:request", "record:answer", "record:state")
+
+
+def _sane_box(box) -> bool:
+    """A box of fractions {x, y, w, h}: all finite numbers within +-8, with a positive size."""
+    return isinstance(box, dict) and all(
+        type(box.get(k)) in (int, float) and math.isfinite(box[k]) and abs(box[k]) <= 8 for k in ("x", "y", "w", "h")
+    ) and box["w"] > 0 and box["h"] > 0
 
 
 def _relay(event: str):
@@ -264,14 +275,47 @@ def _relay(event: str):
             shape_id = str(shape.get("id", "")) if isinstance(shape, dict) else ""
             if not shape_id or (shape_id not in state["shapes"] and len(state["shapes"]) >= MAX_SHAPES):
                 return
-            state["shapes"][shape_id] = shape
+            # IDs remain in the session's history after remove/clear. A delayed worker result
+            # must never recreate a drawing the participants already removed.
+            if shape_id in state["ids"] and shape_id not in state["shapes"]:
+                return
+            if shape_id not in state["shapes"]:
+                state["actions"].append({"kind": "shape", "id": shape_id, "author": clients[sid]["user"]["id"]})
+            # Erasures are changed only through the validated erasing protocol.
+            if "erasures" in shape:
+                shape = {k: v for k, v in shape.items() if k != "erasures"}
+                data = {**data, "shape": shape}
+            anchor = shape.get("anchor")
+            if anchor is not None and not (isinstance(anchor, dict) and len(str(anchor.get("img", ""))) <= MAX_ANCHOR_CHARS):
+                shape = {k: v for k, v in shape.items() if k != "anchor"}  # still shown, just not anchored
+                data = {**data, "shape": shape}
+            elif isinstance(anchor, dict):
+                # Optional boxes (the hand's area to ignore, the drawing's own area) must be numeric and
+                # bounded before they reach OpenCV on the other side: a bad one is dropped, the rest stays.
+                for key in ("exclude", "focus"):
+                    if key in anchor and not _sane_box(anchor[key]):
+                        anchor = {k: v for k, v in anchor.items() if k != key}
+                        shape = {**shape, "anchor": anchor}
+                        data = {**data, "shape": shape}
+            # The anchor is sent once; later updates without one keep it.
+            state["shapes"][shape_id] = {**state["shapes"].get(shape_id, {}), **shape}
             state["ids"].add(shape_id)
         elif event == "ann:remove":
-            state["shapes"].pop(str(data.get("id")), None)
+            removed = str(data.get("id"))
+            shape = state["shapes"].pop(removed, None)
+            if shape:
+                state["erase_count"] -= sum(len(paths) for paths in shape.get("erasures", {}).values())
+            state["actions"] = [a for a in state["actions"] if not (a["kind"] == "shape" and a["id"] == removed)]
         elif event == "ann:clear":
             state["shapes"].clear()
+            state["erase_count"] = 0
+            state["actions"].clear()
+            for op in state["erase_ops"].values():
+                op["closed"] = True
         elif event == "freeze":
             state["frozen"] = bool(data.get("frozen"))
+        elif event == "hands":  # hands-free drawing on the technician's phone, on or off
+            state["hands"] = bool(data.get("on"))
         await sio.emit(event, data, room=room_name(session_id), skip_sid=sid)
 
     return handler
@@ -279,6 +323,71 @@ def _relay(event: str):
 
 for _event in RELAYED:
     sio.on(_event, _relay(_event))
+
+
+@sio.on("ann:erase")
+async def erase(sid, data):
+    session_id = member(sid, data)
+    if session_id is None:
+        return {"ok": False, "error": "Session not found."}
+    state = live(session_id)
+    op_id, batch, changes = data.get("opId"), data.get("batch"), data.get("changes")
+    if not isinstance(op_id, str) or not 1 <= len(op_id) <= 100 or type(batch) is not int or not 0 <= batch < 1000:
+        return {"ok": False, "error": "Invalid erasing action."}
+    if not isinstance(changes, list) or not 1 <= len(changes) <= 100:
+        return {"ok": False, "error": "Invalid erasing area."}
+    for change in changes:
+        if not isinstance(change, dict) or not isinstance(change.get("id"), str):
+            return {"ok": False, "error": "Invalid erasing area."}
+        poly = change.get("polygon")
+        if not isinstance(poly, list) or not 3 <= len(poly) <= 32:
+            return {"ok": False, "error": "Invalid erasing area."}
+        for p in poly:
+            if not isinstance(p, list) or len(p) != 2 or any(type(v) not in (int, float) or not math.isfinite(v) or abs(v) > 4 for v in p):
+                return {"ok": False, "error": "Invalid erasing area."}
+    uid = clients[sid]["user"]["id"]
+    op = state["erase_ops"].get(op_id)
+    if op and (op["author"] != uid or op["closed"]):
+        return {"ok": False, "error": "Erasing action is closed."}
+    if op and batch in op["batches"]:
+        return {"ok": True}
+    accepted = [change for change in changes if change["id"] in state["shapes"]]
+    if not accepted or state["erase_count"] + len(accepted) > MAX_ERASE_POLYGONS:
+        return {"ok": False, "error": "That area cannot be erased."}
+    if op is None:
+        if len(state["erase_ops"]) >= 1000:
+            return {"ok": False, "error": "Too many erasing actions."}
+        op = state["erase_ops"][op_id] = {"author": uid, "batches": set(), "closed": False, "recorded": False}
+    for change in accepted:
+        shape = state["shapes"][change["id"]]
+        shape.setdefault("erasures", {}).setdefault(op_id, []).append(change["polygon"])
+    state["erase_count"] += len(accepted)
+    op["batches"].add(batch)
+    if accepted:
+        if not op["recorded"]:
+            state["actions"].append({"kind": "erase", "id": op_id, "author": uid})
+            op["recorded"] = True
+        await sio.emit("ann:erase", {"opId": op_id, "batch": batch, "changes": accepted, "author": uid}, room=room_name(session_id))
+    return {"ok": True}
+
+
+@sio.on("ann:erase:undo")
+async def undo_erase(sid, data):
+    session_id = member(sid, data)
+    if session_id is None:
+        return {"ok": False, "error": "Session not found."}
+    state = live(session_id)
+    op_id = data.get("opId")
+    op = state["erase_ops"].get(op_id) if isinstance(op_id, str) else None
+    if not op or op["author"] != clients[sid]["user"]["id"] or op["closed"]:
+        return {"ok": False, "error": "Erasing action cannot be undone."}
+    op["closed"] = True
+    state["actions"] = [a for a in state["actions"] if not (a["kind"] == "erase" and a["id"] == op_id)]
+    for shape in state["shapes"].values():
+        removed = shape.get("erasures", {}).pop(op_id, [])
+        state["erase_count"] -= len(removed)
+    await sio.emit("ann:erase:undo", {"opId": op_id}, room=room_name(session_id))
+    return {"ok": True}
 
 
 # ---------- checklist, sign-off, chat and notes (saved) ----------
