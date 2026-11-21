@@ -13,7 +13,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import aliased
 
 from .auth import current_user, get_db, hash_password, require_role
-from .config import ICE_SERVERS, UPLOAD_DIR
+from .config import ICE_SERVERS, TURN_SHARED_SECRET, TURN_TTL_SECONDS, TURN_URLS, UPLOAD_DIR
+from .turn import turn_credentials
 from .db import (
     CallSession, Checklist, SessionEvent, StepResult, User,
     checklist_out, event_out, session_out, step_out, user_out, utcnow,
@@ -29,7 +30,7 @@ admin_only = require_role("admin")
 
 @router.get("/config")
 def config(user: User = Depends(current_user)):
-    return {"iceServers": ICE_SERVERS}
+    return {"iceServers": [*ICE_SERVERS, *turn_credentials(TURN_URLS, TURN_SHARED_SECRET, user.id, TURN_TTL_SECONDS)]}
 
 
 # ---------- checklists ----------
