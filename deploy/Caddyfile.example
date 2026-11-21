@@ -1,0 +1,6 @@
+# Set ARGUIDE_DOMAIN in Caddy's environment to the app hostname.
+{$ARGUIDE_DOMAIN} {
+    reverse_proxy /api/* 127.0.0.1:8000
+    reverse_proxy /socket.io/* 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:3000
+}

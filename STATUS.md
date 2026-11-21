@@ -1,0 +1,249 @@
+# ArGuide status
+
+**Last updated:** 2026-11-21 · **Branch:** `main` · **Last commit:** `PENDING` (set after the merge; the old prototype is the tag `pre-refactor` = `599369b`)
+
+> **Where things stand (2026-11-21).** The owner tried the app on their computer after the dark-room fixes, said everything works fine, and accepted it as the base to build on. The branch was cleaned up (old prototype removed, plans moved to `docs/history/`, commits grouped by topic) and merged into `main`. All automated checks pass (§2). Still unverified, and not required for acceptance: real phones, a hosted site, a relay on a real host, real microphone audio, and real hands in more than one room. **Next phase: a full-stack product layer** on top of the AR core, which stays as it is (OpenCV.js and MediaPipe). The owner described it as product management for training and factory services as software; it still has to be defined with them (§8).
+
+> **Owner decision:** review the current app on the computer; phone and hosted-environment testing are not required in this phase. The owner says previous dashboards were deployed on Vercel. Real Android/iPhone behavior and this version's hosted behavior remain unverified; do not report simulations or the previous deployment as evidence for them.
+
+> **AR core:** surface tracking and gesture logic have automated and generated-camera tests. Their real-hand and phone behavior remains unverified. Plan and reasoning: [`docs/history/AR_CORE_PLAN.md`](docs/history/AR_CORE_PLAN.md). Progress: §2a below.
+
+Read this first in every session. Rules for keeping it current are in [`AGENTS.md`](AGENTS.md). The design and its reasoning are in [`docs/history/REFURBISH_PLAN.md`](docs/history/REFURBISH_PLAN.md).
+
+---
+
+## 1. In one paragraph
+
+ArGuide is live remote help for aircraft maintenance. A technician points a phone camera at the job. A remote expert sees it, draws on it, freezes the picture, walks through a checklist and signs it off, and the call is saved as a printable report. The old prototype (a Node server, two Vite/React apps and a Gemini "AI co-pilot"; removed on 2026-11-21, kept in git under the tag `pre-refactor`) was replaced by a new stack: **`web/` (Next.js 16)** and **`backend/` (Python, FastAPI + python-socketio)**. Milestones M0 to M5 of the plan are built and tested. **There is no cloud AI in this phase, by the owner's decision.** The one exception (2026-11-16) is the AR core: on-device hand tracking and image tracking, served from our own server. The project most likely targets HAL's iDEX DRISHTI Challenge 9 (Do-228 AR remote assistance). That's inferred from the code and **not confirmed by the owner**.
+
+## 2. Where things stand
+
+| Milestone (plan §9) | State |
+|---|---|
+| M0 safety net | Done. Old work committed as `599369b`, tagged `pre-refactor`. Plan and competitor screenshots in `docs/` |
+| M1 Python server | Done (built straight to the signed-in protocol, see plan §13) |
+| M2 Next.js shell and design system | Done |
+| M3 live call in Next.js | Done |
+| M4 accounts and real data | Done |
+| M5 P1 features | Done, except the QR code (a "Copy link" button exists) |
+| M6 speed, polish, release | **Partly done.** Single-origin configuration and relay credentials are prepared (`deploy/`, `docs/DEPLOYMENT.md`); a live relay, a hosted deployment, real-device and performance acceptance are unverified and not required now. See §8 |
+
+**Git:** the work is on `main`, merged from `refurbish/nextjs-python` with a merge commit (PR: PENDING). It is saved as small commits grouped by topic: server relay credentials, server AR anchors, the AR core and call screens, the e2e test, deployment examples, docs, removal of the old prototype, docs cleanup, and one fix. The branches `features`, `ai-copilot` and `refurbish/nextjs-python` were deleted after the merge (their work is in `main`); the tag `pre-refactor` (`599369b`) marks the old prototype. The competitor screenshots (`docs/research/screenshots/*.png`) are git-ignored and exist only on the owner's Mac, because they are other companies' pages and the repo is public. Commit and push only when the owner asks.
+
+**Earlier improvement work:** delayed updates cannot recreate removed drawings. Tracking and hand recognition consume the same source image and placement; hand-covered areas are excluded from anchor features. Partial erasures are shared, deduplicated and undoable after rejoin. Analysis can fall from 640 to 480 pixels if tracking is slow. Photos and consented recordings use the composed picture. Generated-camera tests check rubbing through the live socket, saved AR evidence and distinct generated audio from each side. Real-hand recognition and real microphone audio remain unverified.
+
+### Features that work (verified)
+
+| Area | Feature |
+|---|---|
+| Accounts | Sign-in (cookie), three roles: technician, expert, admin. Admin adds people, changes roles, removes access, resets passwords |
+| Calling | Technician starts a call (aircraft + optional checklist). Experts who are marked "Available" get a ringing dialog. Only one expert can answer. An unanswered call becomes "missed" after 45 s on the phone (server also expires after 60 s). Technician can copy a link for an expert |
+| Live call | Video and voice (technician sends video and audio, expert sends audio). Drawing: arrow, circle, box, pen, text, 4 expert colours. The technician draws in green. Undo (own shapes), clear all, pointer, freeze/resume, mute, sound, camera flip, torch (where supported), screen kept awake. Connection bars and the expert's numbers are measured (delay, frames, size, speed, loss) |
+| Work | Checklist step by step (technician) or full list (expert), "problem" needs a note, expert sign-off when every step has a result, inspector-style **SIGNED OFF stamp** on both sides. Chat, notes, photos (video frame plus drawings), recording only after the technician allows it |
+| Records | Sessions list with search (aircraft, names, checklist, `SES-` number) and filters (status, period). Printable report (facts, checklist with stamp, photos, recording, notes, timeline). Real 7-day numbers on the expert's Calls page. Checklist editor |
+| AR (updated 2026-11-21) | In generated-camera tests, drawings follow a moving textured surface on both screens, and also a small object that moves while the camera is still (e.g. a card sliding on a bench). On the owner's real dark-room frame the tracker now finds enough points for large drawings; bare areas are flagged. Line styles: **solid** = stuck to the part, or just lost (held solid for 0.5 s), or fixed to the screen because nothing here can hold it; **faded and dashed** = was attached, the part is out of view (the screen says so in words). Hands-free input: point, pinch to draw (smooth curve), an open palm that moves rubs out parts of marks at once. Guide toggles the hand outline. The Hands button names what is seen. Undo and Clear all are buttons. `?debug=ar` on a call page shows speeds, gesture, pinch size and every drawing's state. Hand behaviour is tested with synthetic landmarks and generated pictures, never a real moving hand |
+| Robustness | Each call has its own private room. Rejoining restores drawings and freeze. A call left with nobody connected for 2 minutes is ended automatically. Replies to an outdated video offer are ignored |
+
+### Checks (2026-11-21, final tree before the merge; rows marked historical were not re-run)
+
+| Check | Command | Result |
+|---|---|---|
+| Server tests | `UV_CACHE_DIR=/private/tmp/arguide-uv-cache npm test` | 10 of 10 pass, including erasing, undo history, storage limits, expiring TURN credentials and anchor `exclude`/`focus` checks |
+| AR unit tests | `cd web && npm test` | 53 of 53 pass: gestures at slow hand rates, rubbing at once, a still camera with a moving card, a jump after freeze/resume never reported in the wrong place, the analysis-size ladder, smooth pen curves, dim-room tracking, a noise-only guard, "fixed" for bare surfaces, the plain-words message chooser, open hand from finger joints. Node prints module-type warnings |
+| Type check | `cd web && npx tsc --noEmit` | Clean |
+| Production builds | `cd web && npx next build` and `npx next build --webpack` | Both pass |
+| Two-browser call, production build (`next start`, Chrome for Testing 1243) | `npm run e2e`; with `E2E_FAKE_HAND=1`; with `E2E_CLIP=object E2E_FAKE_HAND=1` | All pass. The expert's arrow reaches the technician in 17 to 25 ms and stays solid for 3 s; the box follows the moving part (worst 0.2 to 0.6 % of the width); a synthetic pinch gives one unbroken line (31 points); a synthetic open palm rubs at once; photos, recordings and generated audio from both sides; nothing leaves our server. Measured on this Mac: tracker 30 pictures/s, hand recogniser 30 results/s. Synthetic hands, not a real hand |
+| Two-browser call, `next dev` and Brave | same command with `BASE_URL` and `CHROME_PATH` | Pass: `next dev` in Chrome for Testing (standard; moving card + synthetic hand) and in Brave (standard; moving card + synthetic hand, 3 of 3). The Brave moving-card run had failed once in the earlier session at a 5 s wait; that was never explained and did not recur |
+| Bug found by the e2e | | Once in 7 runs the technician ended the call while the expert was recording and a **0-byte recording** was saved under a "Recording saved" message; the report's video then failed to load. Fixed in commit `7173fbc`: if nothing was captured nothing is saved, and the screen says so. The cause of the empty capture (the call ending before the first picture) is likely but **not reproduced on demand**. After the fix: 10 e2e runs, no failure |
+| Local relay (historical) | temporary coturn 4.19.0 and two relay-only Chromium peers | UDP, TCP and TLS data channels passed, using app-generated expiring credentials and relay candidates on both peers. TLS used a self-signed test certificate with browser certificate checks disabled. Loopback-only; not a hosted certificate-trust or firewall test |
+| Contrast (historical) | (one-off script) | Every text colour pair ≥ 4.5:1 |
+| Lighthouse (historical) | production localhost, simulated mobile, temporary accounts | Login 100 and technician home 91 for performance, 100 accessibility on both; after deferring audio initialization, expert sessions scored 98 and 96 performance and 100 accessibility in two runs (previously 70–73). This is a simulation, not a phone measurement |
+| No cloud AI in new code | `grep -rniE "gemini\|anthropic\|openai\|ai_alert" web/app web/components web/lib backend/app` | No matches (2026-11-21). MediaPipe is allowed for the AR core, on the device only |
+
+**Not yet tested (2026-11-21):** real phones (Android, iPhone, Safari), mobile data and strict networks (no hosted relay yet), a relay and the deployment on a real host, real microphone audio. For AR: a real hand in more than one room and light (only one real camera frame has ever been analysed, a dark one; `isOpenHand` has not met many real hands), bare shiny metal, walking with a chest-mounted phone, frame rate on a phone. Open causes: why expert drawings once did not reach the technician (not reproducible with generated clips; the dark room may explain part of it) and why one recording came out empty (see Checks). The owner's report that everything works was on their own computer and webcam. The installed WebKit browser is incompatible with the installed Playwright.
+
+### 2a. AR core (started 2026-11-16, plan in `docs/history/AR_CORE_PLAN.md`)
+
+| Stage | State |
+|---|---|
+| 0. Decision recorded, tools proven | Done on a Mac (plan §14) |
+| 1. Drawings that stick to the part | **Done and tested** (unit tests + two-browser test with a moving camera clip) |
+| 2. Hands-free pinch drawing | **Done**; logic unit-tested, hand recognition checked with a still photo. A real pinch needs the owner's phone |
+| 3. Real-phone tuning, polish, docs | Owner cannot provide phones or clips. Continue with simulated inputs; real-device behavior and tuning remain unverified |
+| 4. Real 3D on Android (trial) | Needs a separate go-ahead from the owner |
+
+## 3. How to run
+
+```bash
+npm run setup                                        # once: uv sync + npm install
+cd backend && uv run python -m app.cli create-user <username> "<Full Name>" <technician|expert|admin>
+npm run dev:api                                      # Python on :8000 (data in backend/data/, git-ignored)
+npm run dev:web                                      # Next.js on :3000
+```
+
+**Test mode without sign-in** (for trying a call quickly; the owner found login confusing while reviewing):
+
+```bash
+cd backend && DEV_NO_LOGIN=true uv run uvicorn app.main:app --port 8000
+# then open two tabs:  http://localhost:3000/expert?as=<expert username>   and   http://localhost:3000/tech?as=<technician username>
+```
+
+The tab remembers who it is (sessionStorage), so two tabs in one browser can be two people. Requests without `?as=` act as the first expert. This mode is refused when `COOKIE_SECURE=true`. Never enable it on a hosted site.
+
+**Phone on the same Wi-Fi:** `cd web && npm run dev:phone` (https, self-signed; the camera needs https).
+
+**End-to-end test:** the Python server must run in **normal** login mode: with `DEV_NO_LOGIN=true` every request acts as the first expert, so the test's "technician" becomes the expert and nothing works. Needs accounts `ravi` (technician, "Ravi Kumar") and `mehta` (expert, "Dr. Mehta") with password `demo-pass-1`. If Playwright's own browser isn't installed, run `npx playwright install chromium` or set `CHROME_PATH`. On the owner's Mac a cached Chromium exists at `~/Library/Caches/ms-playwright/chromium-1243/...`; Playwright 1.65 expects build 1255. **Browser and ports:** Playwright 1.65 expects Chromium build 1255, which is not installed here; set `CHROME_PATH` to the cached build `~/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` (Brave: `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`). For a production run: build with the test API's address (`BACKEND_URL=http://127.0.0.1:8001 npx next build --webpack`), start `npx next start -H 127.0.0.1 -p 3200`, then `BASE_URL=http://127.0.0.1:3200 npm run e2e`.
+
+**Servers:** none are left running by default. If port 3000 is used by another program (it was, on the owner's Mac: a portfolio site), run the screens on another port, for example `cd web && npx next dev -p 3100`, and give the e2e `BASE_URL`. The newest session-log row says which review servers were left running. Data for review or tests lives in a throwaway folder (`DATA_DIR`), not in the project's `backend/data`, and is not kept.
+
+## 4. Map of the code
+
+| Path | What it does |
+|---|---|
+| `backend/app/main.py` | Starts FastAPI and Socket.IO together. On start, watches calls still marked active |
+| `backend/app/config.py` | All settings from environment variables (see `backend/.env.example`). Generates `data/secret.key` if `SECRET_KEY` is unset |
+| `backend/app/db.py` | SQLAlchemy tables, JSON shapes sent to the browser, the 3 seed checklists, `init_db()` (create_all, no migrations yet) |
+| `backend/app/auth.py` | argon2 passwords, JWT cookie `arguide_session` (12 h), short socket token (2 min), role checks, login throttle (5 tries a minute), `DEV_NO_LOGIN` bypass |
+| `backend/app/api.py` | REST: checklists, people, sessions, file upload/download, stats, ICE config |
+| `backend/app/realtime.py` | Live connection: call life cycle, relays, checklist, sign-off, chat, abandoned-call timer |
+| `backend/app/cli.py` | `create-user` command |
+| `backend/tests/test_call_flow.py` | Starts a real server; runs whole calls with 3 to 4 people |
+| `web/app/(auth)/login` | Sign-in page |
+| `web/app/(app)/layout.tsx` → `components/app-provider.tsx` | Loads the signed-in user, opens the live connection, expert availability, incoming-call dialog and ring, toasts |
+| `web/app/(app)/(nav)/…` | Pages with the top bar: `tech`, `expert`, `expert/session/[id]` (console), `sessions`, `sessions/[id]` (report), `checklists`, `admin/users` |
+| `web/app/(app)/tech/session/[id]` | Technician's full-screen phone call (no top bar) |
+| `web/components/call/use-call.ts` | **All live-call logic** shared by both sides (join, WebRTC, drawings, steps, chat, photo, recording) |
+| `web/components/call/stage.tsx` | Video + drawing canvas: draws each video picture together with where its drawings are now (so they never trail), pointer input, `HandPen` handle for hands-free drawing, signal bars. Repaints on every hand result (`requestDraw`), never shows a stroke being drawn as lost, and tells the user what dashed/loose drawings mean (`TRACKING_NOTICE`; the technician page shows it in its own banner stack through `onNotice`, the expert stage shows it itself) |
+| `web/lib/ar/anchor-core.ts` | **The tracker** (pure, OpenCV passed in): per-drawing anchor picture; features are taken from the drawing's own area first (`focus`, widened step by step if it has too few corners); the corner cut-off follows brightness and noise (`noiseSigma`, `DIM_BELOW`); predict with optical flow, then line up again with the anchor picture every frame (no drift); every placement is checked against the live picture (`similarity`, `MIN_SIMILARITY`); search with ORB when lost; `grow` when a drawing is finished. Placement states: `locked`, `searching` (lost), `fixed` (fewer than 10 corner points: nothing to hold on to). Tuning knobs and the reasons for each number are at the top |
+| `web/lib/ar/anchor.worker.ts`, `use-anchors.ts` | Runs the tracker in a background worker; feeds it video pictures and returns each picture with its placements |
+| `web/lib/ar/hands.ts`, `erase.ts`, `quality.ts` | Gesture state machine (counts pictures; open palm that moves rubs at once), surface-relative eraser geometry; `isOpenHand` recognises an open hand from the finger joints; `quality.ts` holds the analysis-size ladder (480/640/960), `holdLost` (0.5 s solid, state "holding", after a loss), `nearest` (which tracked picture a hand result belongs to) and `trackingNotice` (which plain-words message applies) |
+| `web/lib/ar/hands.worker.ts`, `use-hands.ts` | MediaPipe hand recogniser in a background worker (CPU); `use-hands.ts` runs its own video-frame loop next to the tracker and drops late results instead of resetting |
+| `web/lib/ar/stats.ts`, `web/components/call/ar-debug.tsx` | Live numbers (`window.arguideStats`) and the `?debug=ar` panel |
+| `web/scripts/copy-vendor.mjs` → `web/public/vendor/` | Copies OpenCV.js and MediaPipe's runtime into the site on `npm install` (git-ignored). The hand model `public/vendor/mediapipe/gesture_recognizer.task` (8.4 MB, Apache-2.0) is kept in git |
+| `web/components/work.tsx` | Stamp, checklist panel, step card, chat/notes, photos and recordings |
+| `web/components/ui.tsx`, `top-nav.tsx` | Buttons, fields, native `<dialog>`; top bar |
+| `web/lib/` | `api.ts` (fetch + errors + test-mode header), `webrtc.ts` (peer + quality), `annotations.ts` (shapes, drawing, photo capture), `format.ts`, `ring.ts` (ringtone made with Web Audio), `types.ts` |
+| `web/e2e/call.mjs`, `make-clip.mjs` | Two-browser end-to-end test; makes the two test clips used as the technician's camera: a moving camera over a still panel, or (`E2E_CLIP=object`) a still camera with a small card moving |
+| `web/AGENTS.md` | Written by Next.js itself: read the bundled Next 16 docs before changing Next-specific code |
+| `docs/history/`, `deploy/` | Finished plans (refurbish, AR core, review round) and the example Caddy, systemd and coturn files for the pilot deployment (`docs/DEPLOYMENT.md`) |
+
+### Live messages (Socket.IO, all need a signed-in socket token)
+
+| From | Event | Purpose |
+|---|---|---|
+| Expert | `expert:available {on}` | Join or leave the `experts` room; server replies `queue:update` |
+| Technician | `call:start {aircraft, checklistId}` → ack `{ok, session}` | Creates a waiting session; experts get `queue:update` |
+| Expert | `call:accept {sessionId}` → ack | Only the first succeeds; room gets `call:accepted` |
+| Either | `session:join {sessionId}` → ack `{session, steps, events, shapes, frozen, hands, peers}` | Joins the private room `session:<id>`; others get `peer:joined` |
+| Either | `session:leave`, `call:end {sessionId, reason?}` | Leave; end (waiting → cancelled or missed, active → ended); room gets `call:ended` |
+| Either | `signal {sessionId, data:{id, type, …}}` | WebRTC set-up, relayed. `id` = offer id; the technician always makes the offer |
+| Either | `ann:put {shape}`, `ann:remove {id}`, `ann:clear`, `pointer`, `freeze`, `hands {on}` | Relayed; drawings, freeze and the hands switch are kept for rejoin. An anchor may include a hand-exclusion box |
+| Either | `ann:erase {opId, batch, changes}`, `ann:erase:undo {opId}` | Validated partial erasures and actor-owned undo, kept in the live room along with per-user undo history |
+| Either | `step:set {step, status, note}`, `msg {kind: chat or note, text}` → ack | Saved; room gets `step:update` / `event:new` |
+| Expert | `signoff` → ack | Saved; room gets `signoff:update` |
+| Both | `record:request` → `record:answer {allowed}` → `record:state {on}` | Consent before recording |
+
+REST endpoints (all under `/api`, docs at `/api/docs` while running): `auth/login|logout|me|socket-token`, `config`, `checklists` (GET/POST/PUT), `users` (admin), `sessions` (list with `q`, `status`, `days`), `sessions/{id}`, `sessions/{id}/files` (photo/recording upload), `files/{event_id}`, `stats`.
+
+Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_events` (chat, note, photo, recording), `step_results`, `checklists`.
+
+## 5. Decisions that stand (do not undo without asking the owner)
+
+| Decision | Detail |
+|---|---|
+| Computer review for this phase (owner, 2026-11-16) | Review locally; do not require phone or hosted testing. Previous dashboards were deployed on Vercel, but this version's deployment remains unverified. |
+| No cloud AI in this phase | No Gemini, no defect detection, nothing in the cloud until the owner accepts the refurbished stack. Parked items are in plan §6 "Later". **Exception (owner, 2026-11-16):** the AR core uses on-device hand tracking (MediaPipe) and OpenCV.js, served from our own site |
+| AR is the core of the product (owner, 2026-11-16) | Drawings stick to the part; technician draws hands-free. Approach: works on every phone first, real 3D (Android only) later as a trial. Phone will be chest/helmet mounted, so feedback is by sound and buzz, and hands-free is on by default |
+| Python backend, Next.js frontend | Owner's requirement |
+| Closed-network ready | Nothing may call outside services at runtime (fonts bundled by `next/font`, sounds generated, no CDNs, AR files in `public/vendor`). Only exception: the default STUN server in `ICE_SERVERS`, which can be overridden. Enforced in the browser by `Content-Security-Policy: connect-src` in `web/next.config.ts` |
+| "Flight line" design (owner chose it) | Live-call screens dark (`live` class, `hangar` #18222b); everything else light (`paper` #f7f9fa). Status colours only for status (warn, caution, normal, advisory). Typeface B612 / B612 Mono. The inspector stamp is the one bold element. Technician buttons ≥ 56 px with a word under every icon. Sentence case; buttons say what happens. Tokens are in `web/app/globals.css` |
+| Few dependencies | Web runtime: next, react, react-dom, socket.io-client, lucide-react, plus `@techstark/opencv-js` and `@mediapipe/tasks-vision` for the AR core (loaded only on call pages, in workers). Native HTML instead of UI libraries |
+| Same-origin API | Browser talks to Next.js for `/api`; `next.config.ts` rewrites requests to Python so the cookie stays first-party. The live socket can connect directly to a separately hosted Python server using `NEXT_PUBLIC_SOCKET_URL` and a short-lived token. Vercel now supports WebSockets; this app's Python process, in-memory live state and storage still need an appropriate backend configuration. This version's hosting is unverified. |
+| App accepted; old prototype removed (owner, 2026-11-21) | The owner said everything works and accepted the app. `ArGuide/` was deleted from the repo; the old code is in git under the tag `pre-refactor`. The old Gemini key file was kept outside the repo (owner's home folder) for the AI phase |
+| Next phase is full-stack product work, not AI (owner, 2026-11-21) | Product management for training and factory services as software, on top of the AR core. Scope not defined yet: plan it with the owner first. The AI phase has not started |
+| AR stack stays as it is (owner, 2026-11-21) | OpenCV.js and MediaPipe stay. three.js was only used in the removed old prototype; the new app has no 3D library (real 3D is the parked Stage 4 trial) |
+| Work goes through pull requests (2026-11-21) | Branch off `main`, open a PR, merge with a merge commit so the separate commits stay in the history (`AGENTS.md`) |
+| Old Vercel sites (owner, 2026-11-21) | `ar-vr-guide-technician` and `ar-vr-guide-expert` (Vite, built from the removed `ArGuide/`) had their "Ignored Build Step" set to `exit 0`: they no longer rebuild and keep serving their last version. The old code's commits mention Render for the old server; it was not touched |
+
+## 6. Lessons learned (save the next agent the time)
+
+- **Next.js 16 is newer than most training data.** Read `web/node_modules/next/dist/docs/` before Next-specific changes. `params` in pages are read with `useParams()` (client pages).
+- **TypeScript is pinned to 5.x.** `npm install typescript` pulled TS 7 (native), which Next 16's build doesn't support.
+- **React dev mode runs effects twice.** Anything started in an effect must ignore the discarded run (see the `settled` / `waiters` pattern in `use-call.ts`). Two quick video offers must not cross; that's why every signal carries an offer `id`.
+- **Newer Chrome makes `scrollIntoView()` return a Promise.** Never return a call's value from a `useEffect` arrow; use braces.
+- **Socket.IO through Next rewrites** needs `skipTrailingSlashRedirect: true` and the `/socket.io/` rewrite with its trailing slash. [Vercel now supports WebSockets](https://vercel.com/changelog/websocket-support-is-now-generally-available); do not assume that proves this Python app's stateful backend works on a particular deployment.
+- **Dev server blocks non-localhost origins.** `allowedDevOrigins` in `next.config.ts` includes 127.0.0.1 and LAN ranges.
+- **Forms with passwords use `method="post"`**, so a click before the page script loads can't put the password in the address bar.
+- **OpenCV.js 5 has no `goodFeaturesToTrack`.** Use `new cv.GFTTDetector(n, quality, minDistance).detect(...)`. Constructors take positional numbers. A thrown number (like `7029176`) is an OpenCV C++ error, usually an empty input.
+- **Following points from picture to picture drifts** (2 px in 45 pictures). Lining up against the original anchor picture every picture removes it (`refine` in `anchor-core.ts`).
+- **Camera grain makes fake corners.** On a blank surface the corner finder returned 129 "corners" of pure noise; corners now need an absolute strength (`MIN_CORNER_STRENGTH`).
+- **MediaPipe on the main thread can freeze the page for seconds** (its GPU mode fell back to software: 5 to 12 s for one picture). It now runs in a worker, CPU only.
+- **MediaPipe sends usage logs to Google** (`odml.pa.googleapis.com`) and has no switch. The `connect-src` policy makes the browser refuse it (also inside workers: their scripts get the same header).
+- **AR tests with a moving picture:** after Resume, the canvas still shows the frozen picture for a moment, so "box is on the dot" can be trivially true; the e2e test waits until the dot has moved.
+- **Node 24 runs `.ts` tests directly** (`node --test`); imports in those tests end in `.ts`, which needs `allowImportingTsExtensions` in `tsconfig.json`.
+- **The e2e needs the Python server in normal login mode.** With `DEV_NO_LOGIN=true` the sign-in cookie is ignored and everyone is the first expert; the test then fails at the technician's "Call an expert" with no useful message (the failure screenshot shows "Hello, Dr." on the technician page).
+- **Followed points can agree and still be wrong.** Optical flow reports "found" for points that never moved, and the forward-backward check cannot catch that. The tracker confidently locked onto the still background after a small object jumped. Every placement is now compared with the live picture (normalised correlation over the drawing's own area, `MIN_SIMILARITY`); a poor match counts as lost.
+- **A small drawing area has too few corners.** The drawing's own area is widened step by step (`FOCUS_WIDEN`) until it has `FOCUS_MIN_CORNERS` points; jumping straight to the whole anchor area (mostly background) defeated the purpose. Keep `FOCUS_MARGIN` small: 4% follows a moving card, 20% does not.
+- **Tests that must tell old from new:** first make a version that fails (the generated card was bigger than the anchor area, so the old tracker passed too; the card is now smaller than the anchor area).
+- **zsh does not split unquoted variables** (`set -- $m` in a shell loop); a loop that rewrote constants with `sed` corrupted a source file. Use a small Python script for such experiments and restore the file afterwards.
+- **A fixed threshold tuned on bright clips fails in a dark room (found from a real frame).** The owner's webcam frame had an average grey of 31 of 255: real edges reached corner strength about 0.0019, camera noise about 0.00002, and the tracker's fixed floor was 0.002, so it kept 1 to 20 points where it needs 10 per drawing and 25 or more to be comfortable. Make such numbers follow the picture, but gate the change so lit pictures keep the exact old value: an always-adaptive version (based on texture and noise alone) made the lit e2e clips flaky (failures 3 of 4 runs), the brightness-gated one did not.
+- **Do not estimate camera noise with the median of the strength map.** In a densely textured picture the median is high and the floor never comes down; Immerkaer's fine-scale roughness estimate works (texture only raises it, which is the safe direction).
+- **Never judge the tracker on generated clips alone.** They are bright, sharp and densely textured; the owner's room is none of those. The method that worked: take the owner's screenshot, cut the green strokes out (inpaint), add fresh grain, run the real tracker on it (scripts were in the session scratchpad and are not kept; the image contains the owner's face: never commit it).
+- **Tell the user what the screen is doing.** Dashed = "lost" meant nothing to the owner and looked like broken lines. Every state the user can see needs words on screen.
+- **python-socketio handlers:** the `disconnect` handler takes `(sid, *reason)`; `enter_room` / `leave_room` are async; use `sio.sleep` / `start_background_task` for timers.
+- **Make each commit compile on its own, and check it.** Checking commit by commit in a temporary `git worktree` (`npx tsc --noEmit`, `npm test`) showed the AR library and the call screens could not be separate commits: `capture()` changed shape and its caller was in the next commit. For Python tests in a worktree with no network, run the main project's `.venv/bin/python -m pytest` with `PYTHONPATH` set to the worktree's `backend/`.
+- **Never report success for something empty.** If a call ends before the first picture is captured, `MediaRecorder` gives no data; the code threw away empty pieces and then uploaded an empty file under a "Recording saved" message. It showed up once in 7 end-to-end runs (a 0-byte `.webm`, then `416 Range Not Satisfiable` on the report). Check the result before saying it worked; a rare failure in a test is a real bug until shown otherwise.
+- **`next build` and `next dev` can run side by side in Next 16** (`.next` and `.next/dev`), and `BACKEND_URL` for the `/api` rewrites is read when building: build with the API address the test will use.
+
+## 7. Known limits (deliberate shortcuts; upgrade when needed)
+
+| Shortcut | Limit | Upgrade |
+|---|---|---|
+| Live rooms, login throttle and drawings kept in memory in one process | One server process; drawings lost on restart | Redis + `socketio.AsyncRedisManager` |
+| `create_all`, no migrations | Changing a table breaks existing databases | Add Alembic before the first change on real data |
+| Sync SQLAlchemy inside async socket handlers | Fine for one site's traffic | Async engine if calls queue up |
+| Uploads go through the Next.js rewrite to local disk (`backend/data/uploads`) | Long recordings are large; free hosts wipe disks | Object storage, or upload straight to Python |
+| Expert sends audio only | The technician can't see the expert | Add expert video if wanted |
+| No QR code, no observers, no low-bandwidth mode | — | Plan P2 |
+| Tracker treats the area around a drawing as flat | On strongly curved or deep parts seen from a very different angle, a drawing can slide a little. "In the air" means on the surface behind the fingertip | Real 3D (plan Stage 4, Android only) |
+| A video picture is shown only once the tracker has placed it | Slow devices show fewer frames; the app reduces analysis size and warns if still slow | Measure and tune on actual devices |
+| Hand recogniser runs on the CPU in a worker | Measured 24 to 31 results/s on a Mac; may be slower on phones | Try MediaPipe's GPU mode with an OffscreenCanvas in the worker (not needed on this Mac) |
+| A drawing follows the majority of the features in its own area | If an object fills less than about half of that area, the background wins; after a big jump, a received (compressed) video can take about 0.8 s to find a small object again | Pick the moving object by its motion, not by majority |
+| Fingertip pointer is sent on every hand result | At most about 30 a second, below the screen rate | Send once per animation frame if it ever floods |
+| Corner cut-off follows brightness and noise, with fixed constants (`DIM_BELOW` 90, `MIN_CORNER_STRENGTH_DIM` 0.0003, `NOISE_STRENGTH`, `NOISE_MARGIN`) and fixed gesture thresholds | Tuned on one real dark frame plus generated pictures. May still fail with strong camera noise at high gain, gloves, or a mounted camera | Collect real frames in several rooms and lights (the owner's frame is the only one so far) |
+| Plain surfaces (a bare dark wall) cannot hold a drawing | Such drawings are "fixed": solid, where drawn, they do not move with the camera. The message says so | Real 3D (plan Stage 4), or ask the technician to draw near an edge or label |
+| The expert's side finds a small object again after a jump through compressed video | Moving-card e2e is the hardest case: usually found in 0.15 to 0.25 s, sometimes 1.3 to 4.7 s or lost; one wrong lock (23% of the width off) seen with the old cut-off | Investigate with the debug panel; a better re-find (more features from the area around the object, or the last good place as a search window) |
+| "Hands" switch is not remembered per phone | Each call starts with hands on | Store the choice on the phone if the owner wants |
+
+## 8. Next steps (in order)
+
+**Current phase:** the AR product is accepted and merged. The next phase is a **full-stack product layer** on top of it. Real Android and iPhone calls, real hands in other rooms, a hosted site, a relay on a real host and real-device performance are still unverified and are not required now. Do not claim them.
+
+**Waiting on the owner:**
+1. **Say what the product layer is.** The owner's words: product management for training and factory services as software. Not yet defined (who uses it, which screens, which data, what it replaces). The next session should interview the owner one decision at a time and write a plan in `docs/` before building anything.
+2. If a Render service for the old Node server auto-deploys from `main`, its next deploy will fail because the folder is gone. Suspend it in the Render dashboard (it was not touched from here).
+
+**Next, in order:**
+1. Plan the full-stack layer with the owner (above). New plan goes in `docs/`; when the work is done it moves to `docs/history/`.
+2. Add Alembic (migrations) before the first change to any table (§7).
+3. AR core open items, when the owner can supply hands and phones: a real pinch and rub in several rooms and lights; the `isOpenHand` factor (1.15 on the finger joints: if a relaxed hand erases by accident, raise it); why expert drawings once did not reach the technician (not reproduced); the cause of the rare empty recording (§2 Checks); Stage 4 (real 3D on Android) needs a separate owner decision.
+4. If the owner asks: verify the hosted setup, the relay, backups and device compatibility.
+5. P2 features: low-bandwidth mode, observers, QR code, one-command Docker install for closed networks.
+6. Only when the owner starts it: the AI phase (defect detection and the rest, per `docs/history/REFURBISH_PLAN.md` §6 "Later"). The old Gemini key is saved outside the repo in the owner's home folder.
+
+## 9. Session log
+
+| Date | What happened |
+|---|---|
+| 2026-11-21 (later) | Owner sent a real screenshot from their session: mostly **dashed** green strokes, one solid line, no rubbing, and said the dashed vs solid lines were unexplained and the AR was confusing. Analysed the real frame (it is dark: average grey 31 of 255): the tracker found 1 to 20 points per drawing because its fixed corner cut-off (0.002) is above the real edges of a dark room (up to 0.0019) while the camera noise is far below it (0.00002); my new picture check was ruled out (same result with it off). Fixes, each test-first: the cut-off follows brightness and noise (lit pictures keep the old value; an always-adaptive version made the lit e2e clips flaky and was replaced); a drawing with nothing to hold on to is "fixed" (solid, where drawn) instead of dashed; plain-words messages on both screens; the Hands button names what is seen; open hand also recognised from finger joints; server validates `focus`. On the real frame: big loop 20 → 88 points, left loop 1 → 71; bare wall areas still too plain (now flagged). Tests at the end: web 53/53, TypeScript clean, server 10/10 (unchanged). e2e after the batch: `next dev` Chromium standard clip 4/4 (+1 call-connection flake), moving card 3/3; Brave standard clip passed; Brave moving-card + synthetic hand failed once late in the run and its rerun was cut short at the owner's request, so unresolved. Builds and the production-build e2e not re-run after this batch. Stopped at the owner's request to write this status; servers restored to the no-login review setup (the dev server had been stopped by the interruption). Not verified: anything with the owner's own hands or webcam after these changes. No commit, push or merge. |
+| 2026-11-21 | Owner reported (Brave, laptop webcam, no-login mode): pinch lines dotted and inaccurate, no rubbing, drawings not sticking when an object moves, expert drawings not reaching the technician; asked for the old plans to be reviewed and one phased plan written. Wrote `docs/history/PLAN.md`, banners on the two older plans, deleted the stray `.playwright-mcp/`. **Phase 1:** `?debug=ar` panel and live numbers; the e2e now checks the expert's arrow reaches the technician (14 to 54 ms, solid for 3 s) and passes on the webpack build, `next dev` and Brave, normal and synthetic-hand, so that symptom does not reproduce with generated clips (cause open). Found that the e2e must not run against `DEV_NO_LOGIN`. **Phase 3:** open palm rubs at once; gestures count pictures (one missed or misread picture cannot break a line at slow hand rates); hand recogniser runs beside the tracker and drops late results; smooth pen curves; a stroke being drawn is never dashed; e2e adds a synthetic pinch line (one line, 30 to 48 points). Skipped, with reasons: GPU delegate (hands already 24 to 31/s) and pointer throttle (at most about 30/s). **Phase 4:** the tracker follows an object that moves while the camera is still (drawing's own area first; failing test first: 51 px off, now 2 px); found and fixed that the tracker could lock confidently onto the still background after a small object jumped (photometric check of every placement; area widened step by step); 0.5 s solid hold after a loss; analysis size ladder 480/640/960; server validates the new `focus` box; second generated clip (`E2E_CLIP=object`). Results: web tests 46/46, server tests 10/10, TypeScript clean, webpack and default builds pass, e2e matrix passes (one Brave run failed under load, rerun passed). Review servers left running (§3). Not done: Phase 2 (needs the owner's session), real webcam/hand/phone checks. No commit, push or merge. |
+| 2026-11-16 | Wrapped up at the owner's request without committing or pushing. Server tests 10/10, web tests 33/33, TypeScript, production webpack build and synthetic-hand two-browser call passed. TypeScript initially ran concurrently with the build and saw temporary missing generated files; the sequential rerun passed. Started no-login local walkthrough servers using throwaway demo data, verified technician and expert links in a browser, and intentionally left the servers running for the owner. Phone and hosted testing remain outside this phase and unverified. |
+| 2026-11-16 | Owner requested local computer review and said phone and hosted tests are not required in this phase; previous dashboards had been deployed on Vercel. Reviewed generated-camera screenshots of the expert and technician call screens, incoming call, report and sessions. Both normal and synthetic-hand browser calls passed, including a new playback check of the recording saved after the technician ends. 10 server and 33 web tests, TypeScript and webpack build passed. The default Turbopack build was blocked by a local port permission error. Corrected outdated Vercel WebSocket notes; the new Python backend's hosted behavior and real-phone behavior remain unverified. Temporary test data and servers were removed. |
+| 2026-11-16 | Ran a local coturn 4.19.0 relay using app-generated expiring credentials. Two Chromium peers connected with relay-only candidates and exchanged data over UDP, TCP and TLS; the TLS test used a self-signed certificate and disabled browser certificate checks. Deferred expert audio initialization until interaction or an incoming call; the production browser call and ringtone check passed. Expert sessions Lighthouse improved from 70–73 to 98 and 96 in two simulated mobile runs. Hosted certificate trust and restrictive firewalls remain untested. 33 web and 10 server tests, TypeScript and the webpack build passed. Temporary servers were stopped. |
+| 2026-11-16 | Added expert keyboard drawing and fixed recording when the technician ends a call. Both production browser runs passed with generated two-sided audio and moving video; the second also used synthetic hand landmarks to exercise palm hold, rub and undo. 33 web tests, 10 server tests and the webpack build passed. Mobile-style Lighthouse reached 100 on login, 91 on technician home, but only 70–73 on expert sessions; disabling prefetch did not reliably help and was reverted. Removed obsolete coturn options after checking its current documentation, and compiled coturn in a temporary folder. The local relay test could not start because the automatic approval service reached its usage limit; no relay was started. Real hands, phones, real audio, WebKit, deployment and live relay remain unverified. Temporary app servers and data were removed. No commit or merge. |
+| 2026-11-16 | Implemented hold-then-rub partial erasing, per-user undo history and bounded shared masks; added frame-matched hand input, hand exclusion for anchor features, adaptive analysis size, TURN credential generation and reviewable single-origin deployment files. Synthetic five-anchor tracking measured roughly 40 updates/s on this computer; 33 web and 10 server tests pass. Generated-camera browser tests exercised partial erasing and undo on both screens, plus annotated photos and recordings. Installed WebKit was incompatible with Playwright; phones, actual hand gestures, live relay, deployment and audio remain unverified. No commit or merge. |
+| 2026-11-16 | Added hand outline with Guide toggle and paused hand input while frozen. Photos and consented recordings now use the same composed frame shown on screen. The isolated production browser test confirmed a drawing in the saved photo and video; 25 web tests and 6 server tests passed, and the webpack production build passed. Audio content, real hands and phones remain unverified. Partial rubbing, shared hand/tracker scheduling, M6 and merge remain unfinished. |
+| 2026-11-16 | Owner asked to continue independently without phones or clips. Use automated and simulated tests; real-device acceptance remains unverified. |
+| 2026-11-16 | Owner approved implementation of the improvement plan: partial hand rubbing after a palm hold, hand outline, annotated recordings, Android and iPhone acceptance, and full M6 with one HTTPS app address. Added late-drawing guards on server and client and made tracking/display bitmap capture consistent; 6 server and 24 web tests pass, TypeScript passes, build blocked by local port restriction. E2e and real-device checks not rerun. Most of the improvement plan remains unfinished; nothing from the AR work is committed. |
+| 2026-11-15 | Inspected the old app; researched competitors; wrote the plan (`docs/history/REFURBISH_PLAN.md`). Owner chose: Flight line look, build now, internet hosting that stays closed-network ready. Built M0 to M5 (`backend/`, `web/`), with 5 server tests and a two-browser end-to-end test, all passing. Fixed bugs found by testing (abandoned calls, password in URL, crossing video offers, Chrome `scrollIntoView` Promise). Added `DEV_NO_LOGIN` test mode at the owner's request. Added `STATUS.md`, `AGENTS.md`, `CLAUDE.md`. At the owner's request, committed everything and pushed the branch and the `pre-refactor` tag; competitor screenshots kept local (public repo) |
+| 2026-11-16 | Owner tried the app and said the flat whiteboard misses the product's core: AR. Inspected the old demo (`ArGuide/temp_ui/technician/src/app/components/LiveSession.tsx`): sticky drawings were a 64-pixel template slide, hand drawing used MediaPipe from the internet; no OpenCV anywhere. Owner chose: every phone first, real 3D later; phone chest/helmet mounted; device not fixed. Wrote `docs/history/AR_CORE_PLAN.md` and built Stages 0 to 2: tracker (`web/lib/ar/anchor-core.ts`, drift-free, rotation/zoom/tilt), worker and in-sync drawing on both screens, anchors sent with drawings (server keeps them), hands-free gestures with sounds, expert's hand-drawing switch, closed-network guard (CSP) after finding MediaPipe phones home, moving-camera e2e test. Fixed during testing: drift, noise corners, a blank-area crash, MediaPipe freezing the page (moved to a worker), a test that passed on a frozen picture. 22 AR unit tests, 5 server tests, e2e all pass. **Not committed.** Unfinished: real-phone test and tuning (owner), Stage 4 decision |

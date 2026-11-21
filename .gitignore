@@ -12,3 +12,14 @@ yarn-debug.log*
 yarn-error.log*
 .next/
 .cache/
+.playwright-mcp/
+.venv/
+__pycache__/
+.pytest_cache/
+backend/data/
+web/.next/
+web/certificates/
+next-env.d.ts
+*.tsbuildinfo
+test-results/
+docs/research/screenshots/*.png

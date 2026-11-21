@@ -1,0 +1,17 @@
+[Unit]
+Description=ArGuide Next.js app
+After=network.target arguide-api.service
+
+[Service]
+Type=simple
+User=arguide
+Group=arguide
+WorkingDirectory=/opt/arguide/web
+EnvironmentFile=/etc/arguide.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start -- -H 127.0.0.1 -p 3000
+Restart=on-failure
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

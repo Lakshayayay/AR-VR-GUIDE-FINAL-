@@ -1,0 +1,4 @@
+
+# AR runtime copied from node_modules by scripts/copy-vendor.mjs (the hand model stays in git)
+/public/vendor/opencv/
+/public/vendor/mediapipe/wasm/
