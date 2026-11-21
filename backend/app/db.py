@@ -140,7 +140,7 @@ def step_out(r: StepResult) -> dict:
 
 # ---------- setup ----------
 
-# The three checklists from the old app (ArGuide/ai-copilot/database.js).
+# The three checklists from the old prototype (git tag `pre-refactor`, ArGuide/ai-copilot/database.js).
 SEED_CHECKLISTS = [
     ("Hydraulic valve replacement", "Replacing a hydraulic control valve", [
         ("Depressurise the hydraulic system", True),

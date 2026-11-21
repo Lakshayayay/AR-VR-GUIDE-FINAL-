@@ -7,11 +7,6 @@
     "dev:api": "cd backend && uv run uvicorn app.main:app --reload --port 8000",
     "dev:web": "cd web && npm run dev",
     "test": "cd backend && uv run pytest -q",
-    "e2e": "cd web && npm run e2e",
-    "legacy:install": "npm install && cd ArGuide/server && npm install && cd ../ai-copilot && npm install && cd ../expert-dashboard && npm install && cd ../temp_ui/technician && npm install",
-    "legacy:server": "cd ArGuide/server && node index.js",
-    "legacy:ai": "cd ArGuide/ai-copilot && npm run dev",
-    "legacy:expert": "cd ArGuide/expert-dashboard && npm run dev",
-    "legacy:tech": "cd ArGuide/temp_ui/technician && npm run dev"
+    "e2e": "cd web && npm run e2e"
   }
 }

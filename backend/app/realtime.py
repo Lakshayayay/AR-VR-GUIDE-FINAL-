@@ -1,7 +1,8 @@
 """Live connection: call set-up, and relay of video signals, drawings, pointer and freeze.
 
-Replaces ArGuide/server/index.js. Differences: every connection must be signed in,
-each call has its own private room, and pointer + freeze are now relayed.
+Replaces the old prototype's server (git tag `pre-refactor`, ArGuide/server/index.js).
+Differences: every connection must be signed in, each call has its own private room,
+and pointer + freeze are now relayed.
 """
 
 from datetime import timedelta
