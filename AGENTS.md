@@ -16,7 +16,7 @@ These rules apply to every agent and every session (Claude Code reads them throu
 
 - Keep `STATUS.md` true. When you finish a feature, fix a bug, or the owner makes a decision, update the matching section and the session log row for today.
 - Build new work in `web/` (Next.js 16) and `backend/` (Python). `ArGuide/` is the old prototype: don't change it, and don't delete it until the owner accepts the new app.
-- **No AI features in this phase** (no Gemini, Anthropic, OpenAI, MediaPipe, defect detection). The owner decided this. The AI phase starts only after they accept the refurbished stack.
+- **No AI features in this phase** (no Gemini, Anthropic, OpenAI, defect detection, nothing in the cloud). The owner decided this. The AI phase starts only after they accept the refurbished stack. **One exception (owner, 2026-11-16):** the AR core may use on-device hand tracking (MediaPipe) and OpenCV.js, served from our own `web/public/vendor/`, never from the internet. Design: [`docs/AR_CORE_PLAN.md`](docs/AR_CORE_PLAN.md).
 - Nothing may call outside services while the app runs (closed-network ready). The default STUN server in `ICE_SERVERS` is the only exception.
 - Follow the "Flight line" design: tokens in `web/app/globals.css`, rules in `STATUS.md` §5. Live-call screens dark, everything else light. Status colours only for status. Text contrast ≥ 4.5:1. Technician buttons ≥ 56 px with a label.
 - Keep dependencies few. Prefer native HTML and the standard library. Add a package only for a real need, and say why.
@@ -29,9 +29,12 @@ These rules apply to every agent and every session (Claude Code reads them throu
 
 ```bash
 npm test                                   # server tests (repo root)
+cd web && npm test                         # AR unit tests (tracker accuracy, hand gestures, drawing projection)
 cd web && npx tsc --noEmit && npx next build
-npm run e2e                                # needs both servers running and the e2e accounts (STATUS.md §3)
+npm run e2e                                # needs both servers running and the e2e accounts (STATUS.md §3); the Python server in NORMAL login mode, not DEV_NO_LOGIN
+E2E_CLIP=object E2E_FAKE_HAND=1 npm run e2e  # still camera, moving card; generated hand: rub, pinch line (see README "Checks")
 ```
+Run the e2e against the production build and against `next dev`, and in Brave when behaviour differs between browsers (`CHROME_PATH`).
 
 Report results honestly: say what passed, what failed, and what you could not run.
 

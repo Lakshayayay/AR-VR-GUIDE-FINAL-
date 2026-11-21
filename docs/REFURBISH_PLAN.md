@@ -2,6 +2,9 @@
 
 Date: 2026-11-15. Scope: full-stack only. **No AI in this phase.**
 
+> **History, not the current plan (2026-11-21).** Milestones M0 to M5 were built from this file; M6 is part done. What to do next is in [`PLAN.md`](PLAN.md). Parts of this file that no longer hold:
+> §1 "hand gestures parked"; §6 "Later" (gestures and sticky drawings are now the core, see [`AR_CORE_PLAN.md`](AR_CORE_PLAN.md)); §7.1 "Three.js stays"; §7.2 folder layout (no `routers/`, `migrations/` or `legacy/`; the old app stays in `ArGuide/`); §8 "hand-tracking model parked"; §10 "No AI" search (MediaPipe is allowed on the device). §13 is the record of what was really built.
+
 > This file is the design and the reasoning behind it. For where the work stands today, read [`STATUS.md`](../STATUS.md) at the repo root.
 
 ## 1. Context
@@ -507,4 +510,12 @@ For reference, the same work done by one person without AI help would be about 3
 
 **Bugs found and fixed while testing:** calls left open when a browser closed stayed "in progress" forever (now ended after 2 minutes with nobody connected); sign-in form could put the password in the address bar if the page script had not loaded (now always posts); two quick video offers could break the connection (offers now carry an id); a chat effect crashed on newer Chrome (scrollIntoView now returns a Promise).
 
-**Not done yet (M6 and after):** real phone test on mobile data; relay server (coturn) for strict networks; hosting; Lighthouse speed run; deleting `ArGuide/` after acceptance; P2 features.
+**Change on 2026-11-16 (owner):** "hand-gesture drawing" and "drawings that stay stuck to the object as the camera moves" are no longer parked in "Later": they are the core of the product and were built as the AR core, on the device, with no internet. Details, results and how the build differs: [`AR_CORE_PLAN.md`](AR_CORE_PLAN.md). The "No AI" check now excludes MediaPipe, which the AR core uses on the device. Three.js is not used: the 2D canvas with per-drawing placements does what the old demo's three.js tubes did.
+
+**Not done yet (M6 and after):** real phone test on mobile data; hosted relay server (coturn) for strict networks; hosting; real-device performance; deleting `ArGuide/` after acceptance; P2 features. Local relay-only browser connections passed over UDP, TCP and TLS; the TLS check used a self-signed certificate with browser certificate checks disabled. Two simulated mobile Lighthouse runs for expert sessions scored above 90 after deferring audio initialization.
+
+**Improvement work (2026-11-16):** partial hand rubbing, drawing-lifetime guards, shared frame input, annotated photos and recordings, expiring TURN credentials and a reviewable single-origin deployment configuration have been added. The keyboard can draw on the expert canvas, and the recorder saves when the other participant ends the call. Browser tests use generated audio and hand landmarks; real phones, a live relay, hosted deployment and performance gates remain to be verified. See `STATUS.md` and `AR_CORE_PLAN.md` §16 for current results; these additions do not mark M6 complete.
+
+**Owner decision (2026-11-16):** review on the computer for this phase; phone and hosted testing are not required now. The owner reports prior dashboards were deployed on Vercel. This version's hosted and real-device behavior remain unverified.
+
+**Wrap-up (2026-11-16):** local review and automated checks passed; temporary local walkthrough servers are running for the owner. The owner requested that the work remain uncommitted and unpushed. Current links, test results, server state and remaining decisions are in `STATUS.md`.
