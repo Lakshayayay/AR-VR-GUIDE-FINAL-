@@ -11,7 +11,7 @@ import { Button } from "./ui";
 export function Stamp({ signedOff, dark }: { signedOff: SignOff; dark?: boolean }) {
   return (
     <div
-      className={`inline-block animate-stamp rounded-lg border-[3px] p-1 font-mono ${dark ? "border-blue-bright text-blue-bright" : "border-blue text-blue"}`}
+      className={`inline-block animate-stamp rounded-lg border-[3px] p-1 tabular-nums ${dark ? "border-blue-bright text-blue-bright" : "border-blue text-blue"}`}
     >
       <div className="rounded-md border border-current px-4 py-2 text-center">
         <p className="text-lg font-bold tracking-widest">SIGNED OFF</p>
@@ -67,7 +67,7 @@ export function ChecklistPanel({ call }: { call: Call }) {
           return (
             <li key={i} className="rounded-md border border-panel-line p-3">
               <div className="flex gap-3">
-                <span className="font-mono text-dim">{i + 1}</span>
+                <span className="tabular-nums text-dim">{i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <p>{step.text}</p>
                   {step.critical && <p className="text-xs font-bold text-caution">Critical step</p>}
@@ -114,6 +114,11 @@ export function StepCard({ call, onHide }: { call: Call; onHide: () => void }) {
   const [noting, setNoting] = useState(false);
   const steps = call.session?.checklist?.steps ?? [];
   const current = steps.findIndex((_, i) => !call.steps[i]);
+  const hide = (
+    <button onClick={onHide} className="rounded-md px-2 py-1 text-sm text-dim underline">
+      Hide
+    </button>
+  );
   if (current === -1) {
     return (
       <div className="rounded-xl bg-panel/95 p-4 text-center">
@@ -122,6 +127,7 @@ export function StepCard({ call, onHide }: { call: Call; onHide: () => void }) {
         ) : (
           <p>All {steps.length} steps have a result. The expert will sign off.</p>
         )}
+        <div className="mt-2">{hide}</div>
       </div>
     );
   }
@@ -133,9 +139,7 @@ export function StepCard({ call, onHide }: { call: Call; onHide: () => void }) {
           Step {current + 1} of {steps.length}
           {step.critical && <span className="ml-2 font-bold text-caution">Critical</span>}
         </p>
-        <button onClick={onHide} className="rounded-md px-2 py-1 text-sm text-dim underline">
-          Hide
-        </button>
+        {hide}
       </div>
       <p className="mt-1 text-lg font-bold">{step.text}</p>
       {noting ? (
@@ -205,7 +209,11 @@ export function Media({ events, dark }: { events: SessionEvent[]; dark?: boolean
   const photos = events.filter((e) => e.kind === "photo");
   const recordings = events.filter((e) => e.kind === "recording");
   if (!photos.length && !recordings.length) {
-    return <p className={dark ? "text-dim" : "text-ink-soft"}>No photos yet. Use Photo to save the picture with its drawings.</p>;
+    return dark ? (
+      <p className="text-dim">No photos yet. Use Photo to save the picture with its drawings.</p>
+    ) : (
+      <p className="text-ink-soft">No photos or recordings were saved.</p>
+    );
   }
   return (
     <div className="space-y-4">

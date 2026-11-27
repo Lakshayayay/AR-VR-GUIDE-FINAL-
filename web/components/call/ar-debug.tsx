@@ -20,7 +20,7 @@ export function ArDebug({ shapes, placements }: { shapes: Shape[]; placements: R
     return `${shape.id.slice(0, 6)} by ${shape.author} ${shape.tool}: ${state}, ${onScreen ? "on screen" : "OFF screen"}`;
   });
   return (
-    <pre aria-label="AR debug" className="pointer-events-none absolute left-2 top-24 z-20 max-w-[90%] overflow-hidden rounded-md bg-black/75 p-2 font-mono text-[11px] leading-tight text-white">
+    <pre aria-label="AR debug" className="pointer-events-none absolute left-2 top-24 z-20 max-w-[90%] overflow-hidden rounded-md bg-black/75 p-2 font-sans text-[11px] leading-tight text-white tabular-nums">
       {[
         `tracker  ${s.trackFps}/s  ${s.trackMs.toFixed(0)} ms  ${s.trackSize}px`,
         `hands    ${s.handFps}/s  ${s.handMs.toFixed(0)} ms  age ${s.handDelay.toFixed(0)} ms`,

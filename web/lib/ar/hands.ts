@@ -4,6 +4,7 @@
 //   point with the index finger     -> "point" (the expert sees a pointer at the fingertip)
 //   pinch thumb and index, move     -> "draw-start", "draw-move"..., "draw-end" (one unbroken line)
 //   open palm, moved (rubbing)      -> "erase-ready", "erase-move"..., "erase-end" (starts at once, no hold)
+//   thumbs down, held for 1 s       -> "clear-hold", then "clear" (or "clear-cancel" if let go early)
 
 export interface Landmark {
   x: number; // fractions of the picture
@@ -49,6 +50,9 @@ export type HandEvent =
   | { type: "erase-ready" }
   | { type: "erase-move"; at: [number, number]; radius: number }
   | { type: "erase-end" }
+  | { type: "clear-hold" }
+  | { type: "clear" }
+  | { type: "clear-cancel" }
   | { type: "gone" };
 
 // Tuning knobs (test on the owner's phone; see docs/history/AR_CORE_PLAN.md Stage 3).
@@ -62,6 +66,12 @@ const GONE_MS = 90; // ... lasting at least this long, before the hand counts as
 const ERASE_GRACE_FRAMES = 3; // pictures a rub may lose its open-palm pose before it ends
 const ERASE_MOVE = 0.02; // how far the palm must move (share of the width) before it rubs
 const PALM_SCORE = 0.6;
+// Clear all cannot be undone, so it is strict: only a confident gesture, held for a time AND a number of pictures.
+const CLEAR_GESTURE = "Thumb_Down";
+const CLEAR_SCORE = 0.7;
+const CLEAR_HOLD_MS = 1000;
+const CLEAR_HOLD_FRAMES = 6; // so a slow phone cannot clear on two pictures
+const CLEAR_GRACE_FRAMES = 2; // misread pictures in a row that drop the hold
 const SMOOTH = { minCutoff: 1, beta: 4, dCutoff: 1 }; // One Euro filter: steady when still, quick when moving
 
 const TIP = 8, THUMB = 4, WRIST = 0, INDEX_KNUCKLE = 5, LITTLE_KNUCKLE = 17;
@@ -95,6 +105,13 @@ export function createHands() {
   let pinched = false, changeFrames = 0, lastSeen = 0, missing = 0, present = false;
   let palmFrames = 0, palmLost = 0, palmX = 0, palmY = 0, erasing = false;
   let lastGap = 0;
+  let downFrames = 0, downLost = 0, downStart = 0, cleared = false;
+
+  const dropClear = (out: HandEvent[]) => {
+    if (downFrames >= CONFIRM_FRAMES && !cleared) out.push({ type: "clear-cancel" });
+    downFrames = downLost = 0;
+    cleared = false;
+  };
 
   return {
     /** The latest finger gap in palm widths (for the AR debug panel). */
@@ -107,6 +124,7 @@ export function createHands() {
         if (present && missing >= GONE_FRAMES && ms - lastSeen >= GONE_MS) {
           if (pinched) out.push({ type: "draw-end" });
           if (erasing) out.push({ type: "erase-end" });
+          dropClear(out);
           out.push({ type: "gone" });
           pinched = present = erasing = false;
           changeFrames = palmFrames = palmLost = 0;
@@ -133,6 +151,17 @@ export function createHands() {
         changeFrames = 0;
         out.push(pinched ? { type: "draw-start", at } : { type: "draw-end" });
       } else if (pinched) out.push({ type: "draw-move", at });
+
+      // Clear all: a thumbs-down held still. Letting go arms it again. (Before rubbing, which returns early.)
+      if (!pinched && hand.gesture === CLEAR_GESTURE && hand.score >= CLEAR_SCORE) {
+        downLost = 0;
+        if (++downFrames === 1) downStart = ms;
+        if (downFrames === CONFIRM_FRAMES) out.push({ type: "clear-hold" });
+        if (!cleared && downFrames >= CLEAR_HOLD_FRAMES && ms - downStart >= CLEAR_HOLD_MS) {
+          cleared = true;
+          out.push({ type: "clear" });
+        }
+      } else if (downFrames && ++downLost >= CLEAR_GRACE_FRAMES) dropClear(out);
 
       // Rubbing: an open palm, seen in two pictures in a row, that then moves. A still open hand erases nothing.
       const palm = !pinched && ((hand.gesture === "Open_Palm" && hand.score >= PALM_SCORE) || isOpenHand(p));

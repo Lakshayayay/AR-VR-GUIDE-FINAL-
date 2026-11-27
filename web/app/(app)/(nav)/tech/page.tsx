@@ -1,17 +1,20 @@
 "use client";
 
+import { History, PhoneCall } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useApp } from "@/components/app-provider";
-import { Button, Empty, Field, Input, Select } from "@/components/ui";
+import { SessionList } from "@/components/sessions";
+import { Button, Empty, Field, Input, Mark, Select } from "@/components/ui";
 import { api } from "@/lib/api";
-import { day, minutes, STATUS_LABEL } from "@/lib/format";
+import { today, useNow } from "@/lib/format";
 import type { Checklist, Session } from "@/lib/types";
 
 export default function TechnicianHome() {
   const { socket, toast, me } = useApp();
   const router = useRouter();
+  const now = useNow();
   const [checklists, setChecklists] = useState<Checklist[]>([]);
   const [recent, setRecent] = useState<Session[] | null>(null);
   const [aircraft, setAircraft] = useState("");
@@ -39,18 +42,26 @@ export default function TechnicianHome() {
   };
 
   return (
-    <main className="mx-auto max-w-md px-4 py-8">
-      <h1 className="text-2xl font-bold">Hello, {me.name.split(" ")[0]}</h1>
-      <form onSubmit={startCall} className="mt-6 space-y-5">
-        <Field label="Aircraft" hint="Registration or tail number, if you have it.">
+    <main className="mx-auto max-w-md space-y-8 px-4 py-6">
+      <header>
+        <h1 className="wrap-anywhere text-3xl font-bold tracking-tight">Hello, {me.name}</h1>
+        <p className="mt-1 text-ink-soft">{today(now)}</p>
+      </header>
+
+      <form onSubmit={startCall} className="live space-y-5 rounded-2xl p-5" aria-labelledby="ask">
+        <div className="flex items-center gap-3">
+          <Mark className="size-10" />
+          <h2 id="ask" className="text-lg font-bold">Get help on a job</h2>
+        </div>
+        <Field label="Aircraft">
           <Input
             value={aircraft}
             onChange={(e) => setAircraft(e.target.value.toUpperCase())}
             list="aircraft-list"
-            placeholder="VT-ABC"
+            placeholder="Registration or tail number"
             maxLength={32}
             autoCapitalize="characters"
-            className="min-h-14 font-mono text-lg"
+            className="min-h-14 font-mono text-lg placeholder:font-sans placeholder:text-base"
           />
           <datalist id="aircraft-list">
             {knownAircraft.map((a) => <option key={a} value={a} />)}
@@ -63,28 +74,22 @@ export default function TechnicianHome() {
           </Select>
         </Field>
         <Button type="submit" variant="primary" size="lg" className="min-h-16 w-full text-lg" disabled={busy}>
+          <PhoneCall aria-hidden className="size-6" />
           {busy ? "Calling…" : "Call an expert"}
         </Button>
       </form>
 
-      <section className="mt-12" aria-labelledby="recent">
-        <h2 id="recent" className="font-bold">Your recent sessions</h2>
+      <section aria-labelledby="recent">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="recent" className="text-lg font-bold">Your recent calls</h2>
+          <Link href="/sessions" className="rounded-md px-2 py-1 text-sm font-bold text-blue hover:underline">All sessions</Link>
+        </div>
         {recent === null ? (
-          <p className="mt-3 text-ink-soft" role="status">Loading…</p>
+          <p className="text-ink-soft" role="status">Loading…</p>
         ) : recent.length === 0 ? (
-          <div className="mt-3"><Empty title="No sessions yet">Your calls will be listed here with their reports.</Empty></div>
+          <Empty title="No calls yet" icon={History}>Your calls will be listed here with their reports.</Empty>
         ) : (
-          <ul className="mt-3 divide-y divide-rule border-y border-rule">
-            {recent.slice(0, 6).map((s) => (
-              <li key={s.id}>
-                <Link href={`/sessions/${s.id}`} className="grid grid-cols-[auto_1fr_auto] gap-x-4 py-3 hover:bg-card">
-                  <span className="font-mono text-sm text-ink-soft">{day(s.createdAt)}</span>
-                  <span className="truncate">{s.checklist?.name ?? (s.aircraft || "Call")}</span>
-                  <span className="text-sm text-ink-soft">{s.status === "ended" ? minutes(s.startedAt, s.endedAt) : STATUS_LABEL[s.status]}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <SessionList sessions={recent.slice(0, 5)} meId={me.id} />
         )}
       </section>
     </main>

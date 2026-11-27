@@ -118,9 +118,9 @@ function Console({ sessionId }: { sessionId: number }) {
         <section aria-label="This call">
           <p className="text-sm text-dim">In call with</p>
           <p className="text-xl font-bold">{session?.technician.name ?? "…"}</p>
-          <p className="mt-1 text-dim">{session?.aircraft || "No aircraft given"}</p>
+          <p className={`mt-1 text-dim ${session?.aircraft ? "font-mono" : ""}`}>{session?.aircraft || "No aircraft given"}</p>
           <p className="font-mono text-sm text-dim">{session?.code}</p>
-          <p className="mt-3 font-mono text-2xl">{live ? clock(since(session?.startedAt, now)) : "--:--"}</p>
+          <p className="mt-3 text-2xl tabular-nums">{live ? clock(since(session?.startedAt, now)) : "--:--"}</p>
           <Button variant="danger" className="mt-4 w-full" onClick={() => call.end()} disabled={!live}>
             End call
           </Button>
@@ -131,7 +131,7 @@ function Console({ sessionId }: { sessionId: number }) {
             {queue.map((s) => (
               <li key={s.id} className="rounded-md border border-panel-line p-2 text-sm">
                 <p className="font-bold">{s.technician.name}</p>
-                <p className="text-dim">{s.aircraft || "No aircraft"}</p>
+                <p className={`text-dim ${s.aircraft ? "font-mono" : ""}`}>{s.aircraft || "No aircraft"}</p>
               </li>
             ))}
           </ul>
@@ -259,7 +259,7 @@ function Console({ sessionId }: { sessionId: number }) {
             Connection <SignalBars quality={q} />
           </p>
           {q ? (
-            <dl className="grid grid-cols-2 gap-y-1 font-mono text-dim">
+            <dl className="grid grid-cols-2 gap-y-1 text-dim tabular-nums">
               <dt>Delay</dt>
               <dd>{q.rttMs ?? "–"} ms</dd>
               <dt>Picture</dt>

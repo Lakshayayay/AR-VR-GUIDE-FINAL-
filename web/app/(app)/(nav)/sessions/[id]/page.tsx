@@ -1,13 +1,15 @@
 "use client";
 
+import { ArrowLeft, CircleAlert, CircleCheck, Minus, Printer } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useApp } from "@/components/app-provider";
+import { Pill, StatusPill } from "@/components/sessions";
 import { Button } from "@/components/ui";
 import { Media, Stamp } from "@/components/work";
 import { api } from "@/lib/api";
-import { dateTime, day, minutes, STATUS_LABEL, time } from "@/lib/format";
+import { day, minutes, time } from "@/lib/format";
 import type { SessionDetail } from "@/lib/types";
 
 /** The session report: reads like a maintenance task card and prints on paper. */
@@ -38,9 +40,11 @@ export default function SessionReport() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8 print:max-w-none print:p-0">
-      <div className="no-print mb-6 flex flex-wrap gap-3">
-        <Link href="/sessions" className="rounded-md border border-rule px-4 py-2 text-sm font-bold">All sessions</Link>
-        <Button onClick={() => window.print()}>Print or save as PDF</Button>
+      <div className="no-print mb-6 flex flex-wrap items-center gap-3">
+        <Link href="/sessions" className="mr-auto inline-flex min-h-10 items-center gap-2 rounded-md px-2 text-sm font-bold text-blue hover:bg-blue/5">
+          <ArrowLeft aria-hidden className="size-4" /> All sessions
+        </Link>
+        <Button onClick={() => window.print()}><Printer aria-hidden className="size-4" /> Print or save as PDF</Button>
         {inCall && (
           <Link href={me.role === "technician" ? `/tech/session/${s.id}` : `/expert/session/${s.id}`} className="rounded-md bg-blue px-4 py-2 text-sm font-bold text-white">
             Return to call
@@ -48,17 +52,19 @@ export default function SessionReport() {
         )}
       </div>
 
-      <header className="flex flex-wrap items-baseline justify-between gap-2 border-b-2 border-ink pb-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-ink pb-4">
         <h1 className="text-2xl font-bold">Session report</h1>
-        <p className="font-mono text-lg">{s.code}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="font-mono font-bold">{s.code}</p>
+          <StatusPill status={s.status} />
+        </div>
       </header>
 
-      <dl className="grid grid-cols-2 gap-x-6 border-b border-rule py-4 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-x-6 border-b border-rule py-4 tabular-nums sm:grid-cols-4">
         {[
           ["Aircraft", s.aircraft || "–"],
           ["Date", day(s.createdAt)],
           ["Length", minutes(s.startedAt, s.endedAt)],
-          ["Status", STATUS_LABEL[s.status]],
           ["Technician", s.technician.name],
           ["Expert", s.expert?.name ?? "–"],
           ["Drawings", String(s.annotationCount)],
@@ -66,7 +72,7 @@ export default function SessionReport() {
         ].map(([label, value]) => (
           <div key={label} className="py-2">
             <dt className="text-sm text-ink-soft">{label}</dt>
-            <dd className={label === "Aircraft" ? "font-mono font-bold" : "font-bold"}>{value}</dd>
+            <dd className={`wrap-anywhere font-bold ${label === "Aircraft" && s.aircraft ? "font-mono" : ""}`}>{value}</dd>
           </div>
         ))}
       </dl>
@@ -80,10 +86,9 @@ export default function SessionReport() {
           <table className="mt-4 w-full text-left text-sm">
             <thead className="text-ink-soft">
               <tr className="border-b border-rule">
-                <th scope="col" className="w-10 py-2">#</th>
-                <th scope="col" className="py-2">Step</th>
-                <th scope="col" className="py-2">Result</th>
-                <th scope="col" className="py-2">By</th>
+                <th scope="col" className="w-8 py-2">#</th>
+                <th scope="col" className="py-2 pr-3">Step</th>
+                <th scope="col" className="w-1/3 py-2">Result</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-rule">
@@ -91,14 +96,22 @@ export default function SessionReport() {
                 const r = results[i];
                 return (
                   <tr key={i} className="align-top">
-                    <td className="py-2 font-mono">{i + 1}</td>
-                    <td className="py-2">
+                    <td className="py-3 tabular-nums text-ink-soft">{i + 1}</td>
+                    <td className="wrap-anywhere py-3 pr-3">
                       {step.text}
                       {step.critical && <span className="ml-2 text-xs font-bold">(critical)</span>}
                       {r?.note && <p className="mt-1 text-warn">“{r.note}”</p>}
                     </td>
-                    <td className={`py-2 font-bold ${r?.status === "problem" ? "text-warn" : ""}`}>{r ? (r.status === "done" ? "Done" : "Problem") : "No result"}</td>
-                    <td className="py-2">{r ? `${r.user.name}, ${time(r.at)}` : "–"}</td>
+                    <td className="py-2">
+                      {r?.status === "done" ? (
+                        <Pill icon={CircleCheck} className="bg-normal/15 text-normal-ink">Done</Pill>
+                      ) : r?.status === "problem" ? (
+                        <Pill icon={CircleAlert} className="bg-warn/15 text-warn-ink">Problem</Pill>
+                      ) : (
+                        <Pill icon={Minus} className="bg-ink-soft/10 text-ink-soft">No result</Pill>
+                      )}
+                      {r && <p className="mt-1 wrap-anywhere text-xs text-ink-soft tabular-nums">{r.user.name}, {time(r.at)}</p>}
+                    </td>
                   </tr>
                 );
               })}
@@ -115,13 +128,13 @@ export default function SessionReport() {
       <section className="border-b border-rule py-6" aria-labelledby="notes">
         <h2 id="notes" className="mb-3 text-lg font-bold">Notes and messages</h2>
         {notes.length === 0 ? (
-          <p className="text-ink-soft">None.</p>
+          <p className="text-ink-soft">No notes or messages were saved.</p>
         ) : (
           <ul className="space-y-3">
             {notes.map((e) => (
               <li key={e.id}>
-                <p className="text-sm text-ink-soft">{e.kind === "note" ? "Note" : "Message"} from {e.user?.name}, {time(e.at)}</p>
-                <p>{e.text}</p>
+                <p className="text-sm text-ink-soft tabular-nums">{e.kind === "note" ? "Note" : "Message"} from {e.user?.name ?? "Unknown person"}, {time(e.at)}</p>
+                <p className="wrap-anywhere">{e.text}</p>
               </li>
             ))}
           </ul>
@@ -130,16 +143,16 @@ export default function SessionReport() {
 
       <section className="py-6" aria-labelledby="timeline">
         <h2 id="timeline" className="mb-3 text-lg font-bold">Timeline</h2>
-        <ol className="space-y-1 text-sm">
+        <ol className="border-l border-rule pl-4 text-sm">
           {timeline.map((t, i) => (
-            <li key={i} className="grid grid-cols-[5rem_1fr] gap-3">
-              <span className="font-mono text-ink-soft">{time(t.at)}</span>
-              <span>{t.text}</span>
+            <li key={i} className="relative grid grid-cols-[auto_1fr] gap-3 py-2 before:absolute before:top-3.5 before:-left-[1.3rem] before:size-2 before:rounded-full before:bg-blue">
+              <time dateTime={t.at} className="whitespace-nowrap text-ink-soft tabular-nums">{time(t.at)}</time>
+              <span className="wrap-anywhere">{t.text}</span>
             </li>
           ))}
         </ol>
-        <p className="mt-6 text-xs text-ink-soft">Printed from ArGuide. Times are local to this device. Report made {dateTime(new Date().toISOString())}.</p>
       </section>
+      <footer className="hidden border-t border-rule pt-3 text-xs text-ink-soft print:block">Printed from ArGuide. Times are local to this device.</footer>
     </main>
   );
 }

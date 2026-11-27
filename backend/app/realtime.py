@@ -12,7 +12,7 @@ import socketio
 from socketio.exceptions import ConnectionRefusedError
 from sqlalchemy import func, select
 
-from .auth import read_token
+from .auth import find_person
 from .config import ALLOWED_ORIGINS
 from .db import (
     CallSession, Checklist, SessionEvent, SessionLocal, StepResult, User,
@@ -126,11 +126,10 @@ async def close_room(session_id: int) -> None:
 
 @sio.event
 async def connect(sid, environ, auth):
-    uid = read_token(auth.get("token") if isinstance(auth, dict) else None, "socket")
     with SessionLocal() as db:
-        user = db.get(User, uid) if uid else None
-        if not user or not user.active:
-            raise ConnectionRefusedError("Sign in to continue.")
+        user = find_person(db, auth.get("user") if isinstance(auth, dict) else None)
+        if not user:
+            raise ConnectionRefusedError("Choose who you are to continue.")
         clients[sid] = {"user": {"id": user.id, "name": user.name, "role": user.role}, "joined": set()}
 
 

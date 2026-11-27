@@ -16,11 +16,12 @@ import { cue } from "@/lib/ring";
 import { clock, since, useNow } from "@/lib/format";
 
 const RING_SECONDS = 45;
+const DONE_SHOW_MS = 4000; // a finished checklist shows this long, then shrinks out of the way
 
 export default function TechnicianCall() {
   const { id } = useParams<{ id: string }>();
   const call = useCall(Number(id), "technician");
-  const { socket, toast } = useApp();
+  const { socket, toast, notice: appNotice } = useApp();
   const router = useRouter();
   const now = useNow();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -29,9 +30,11 @@ export default function TechnicianCall() {
   const pen = useRef<HandPen>(null);
   const handDrawing = useRef(false);
   const rubbing = useRef<{ id: string; batch: number } | null>(null);
+  const clearArmed = useRef(false); // a thumbs-down is being held: all drawings go if it lasts
   const [handMode, setHandMode] = useState(""); // what the computer sees the hand doing, in words
   const [showHand, setShowHand] = useState(true);
   const [eraseReady, setEraseReady] = useState(false);
+  const [clearReady, setClearReady] = useState(false);
   const [notice, setNotice] = useState<TrackingNotice>("");
   const [muted, setMuted] = useState(false);
   const [drawing, setDrawing] = useState(false);
@@ -53,13 +56,29 @@ export default function TechnicianCall() {
   useEffect(() => {
     if (audioRef.current) audioRef.current.srcObject = call.remote;
   }, [call.remote]);
+  const armClear = (on: boolean) => {
+    clearArmed.current = on;
+    setClearReady(on);
+  };
   useEffect(() => {
-    if (!call.shapes.length && rubbing.current) {
+    if (call.shapes.length) return;
+    armClear(false);
+    if (rubbing.current) {
       rubbing.current = null;
       pen.current?.endRub();
       setEraseReady(false);
     }
   }, [call.shapes.length]);
+
+  // With every step answered, the card shows briefly (again at sign-off), then gets out of the way.
+  const allDone = !!session?.checklist?.steps.length && session.checklist.steps.every((_, i) => call.steps[i]);
+  const signedOff = !!call.signedOff;
+  useEffect(() => {
+    if (!allDone) return;
+    setStepsOpen(true);
+    const t = setTimeout(() => setStepsOpen(false), DONE_SHOW_MS);
+    return () => clearTimeout(t);
+  }, [allDone, signedOff]);
 
   // Nobody answered in time: record it as missed.
   useEffect(() => {
@@ -101,7 +120,7 @@ export default function TechnicianCall() {
     }
   };
 
-  // Hands-free: pinch to draw; move an open palm over a drawing to rub it out.
+  // Hands-free: pinch to draw; move an open palm over a drawing to rub it out; hold a thumbs-down to clear all.
   // Sounds and a buzz tell the technician what happened, because a mounted phone's screen is out of sight.
   const hands = useHands(videoRef, call.hands && phase === "live" && !call.frozen, (events, area, hand, capturedAt) => {
     pen.current?.mask(area);
@@ -137,13 +156,27 @@ export default function TechnicianCall() {
         rubbing.current = null;
         pen.current?.endRub();
         setEraseReady(false);
+      } else if (e.type === "clear-hold") {
+        if (!call.shapes.length) continue;
+        armClear(true);
+        cue("warning");
+        navigator.vibrate?.(80);
+      } else if (e.type === "clear") {
+        if (!clearArmed.current) continue;
+        armClear(false);
+        call.clear();
+        cue("clear");
+        navigator.vibrate?.([30, 60, 30, 60, 30]);
+        toast("All drawings cleared.");
+      } else if (e.type === "clear-cancel") {
+        armClear(false);
       } else if (e.type === "gone") {
         pen.current?.cursor(null);
         call.sendPointer(null);
       }
     }
     // Say what is seen (the state only changes when the words do, so this does not re-draw the page every picture).
-    setHandMode(!hand ? "" : handDrawing.current ? "Drawing" : rubbing.current ? "Rubbing" : isOpenHand(hand.landmarks) ? "Open hand" : "Hand seen");
+    setHandMode(!hand ? "" : handDrawing.current ? "Drawing" : rubbing.current ? "Rubbing" : clearArmed.current ? "Thumbs down" : isOpenHand(hand.landmarks) ? "Open hand" : "Hand seen");
   });
   const handsLabel = !call.hands ? "Hands off" : hands.status === "failed" ? "No hands" : handMode || "Hands on";
 
@@ -181,8 +214,8 @@ export default function TechnicianCall() {
       {/* Top bar */}
       <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
         <div className="rounded-lg bg-hangar/85 px-3 py-2">
-          <p className="font-mono text-lg leading-none">{phase === "live" || phase === "connecting" ? clock(since(session?.startedAt, now)) : "--:--"}</p>
-          <p className="mt-1 text-sm text-dim">{session?.expert ? session.expert.name : session?.code}</p>
+          <p className="text-lg leading-none tabular-nums">{phase === "live" || phase === "connecting" ? clock(since(session?.startedAt, now)) : "--:--"}</p>
+          <p className={`mt-1 text-sm text-dim ${session?.expert ? "" : "font-mono"}`}>{session?.expert ? session.expert.name : session?.code}</p>
         </div>
         <div className="flex items-center gap-2">
           {call.recording === "on" && (
@@ -223,7 +256,9 @@ export default function TechnicianCall() {
         {linkDown && <p className="rounded-lg bg-caution px-3 py-2 font-bold text-ink">Connection lost. Reconnecting…</p>}
         {phase === "connecting" && <p className="rounded-lg bg-hangar/85 px-3 py-2">Connecting to {expertName}…</p>}
         {eraseReady && <p className="rounded-lg bg-hangar/85 px-3 py-2">Rubbing out…</p>}
+        {clearReady && <p className="rounded-lg bg-caution px-3 py-2 font-bold text-ink">Keep holding to clear all drawings…</p>}
         {notice && <p className="rounded-lg bg-hangar/85 px-3 py-2">{TRACKING_NOTICE[notice]}</p>}
+        {appNotice && <p className="pointer-events-none rounded-lg bg-panel px-3 py-2 text-sm">{appNotice}</p>}
       </div>
 
       {/* Bottom: step card, then controls */}
@@ -232,8 +267,8 @@ export default function TechnicianCall() {
           {hasSteps && (stepsOpen ? (
             <StepCard call={call} onHide={() => setStepsOpen(false)} />
           ) : (
-            <button onClick={() => setStepsOpen(true)} className="rounded-lg bg-panel/95 px-3 py-2 text-sm font-bold">
-              Show checklist step
+            <button onClick={() => setStepsOpen(true)} className="min-h-14 rounded-lg bg-panel/95 px-4 text-sm font-bold">
+              {allDone ? (signedOff ? "Signed off" : "Checklist done, waiting for sign-off") : "Show checklist step"}
             </button>
           ))}
           {drawing && (
@@ -289,10 +324,10 @@ export default function TechnicianCall() {
             <>
               <p className="text-lg font-bold">Calling an expert…</p>
               <p className="mt-1 text-dim">
-                {session?.aircraft || "No aircraft given"}
+                {session?.aircraft ? <span className="font-mono">{session.aircraft}</span> : "No aircraft given"}
                 {session?.checklist && `, ${session.checklist.name}`}
               </p>
-              <p className="mt-3 font-mono text-dim" aria-live="off">
+              <p className="mt-3 text-dim tabular-nums" aria-live="off">
                 Ringing for up to {Math.max(0, Math.ceil(RING_SECONDS - (now - ringStart) / 1000))} s
               </p>
               <div className="mt-4 grid grid-cols-2 gap-3">

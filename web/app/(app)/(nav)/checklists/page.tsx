@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ClipboardCheck, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-provider";
-import { Button, ErrorText, Field, Input, Textarea } from "@/components/ui";
+import { Button, Empty, ErrorText, Field, Input, Textarea } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Checklist } from "@/lib/types";
 
@@ -15,18 +16,24 @@ const toSteps = (text: string) =>
 
 export default function ChecklistsPage() {
   const { toast } = useApp();
-  const [list, setList] = useState<Checklist[]>([]);
+  const [list, setList] = useState<Checklist[] | null>(null);
+  const [listError, setListError] = useState("");
   const [editing, setEditing] = useState<Checklist | null>(null);
   const [stepsText, setStepsText] = useState("");
   const [error, setError] = useState("");
+  const editor = useRef<HTMLFormElement>(null);
 
-  const load = () => api<Checklist[]>("/checklists?include_hidden=true").then(setList, () => {});
+  const load = () => api<Checklist[]>("/checklists?include_hidden=true").then((items) => {
+    setList(items);
+    setListError("");
+  }, (e) => setListError(e.message));
   useEffect(() => void load(), []);
 
   const open = (c: Checklist) => {
     setEditing(c);
     setStepsText(toText(c));
     setError("");
+    requestAnimationFrame(() => editor.current?.focus());
   };
 
   const save = async (e: React.FormEvent) => {
@@ -36,7 +43,9 @@ export default function ChecklistsPage() {
     try {
       const saved = await api<Checklist>(editing.id ? `/checklists/${editing.id}` : "/checklists", { method: editing.id ? "PUT" : "POST", json: body });
       toast(`Saved “${saved.name}”.`);
-      open(saved);
+      setEditing(saved);
+      setStepsText(toText(saved));
+      setError("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
@@ -44,28 +53,47 @@ export default function ChecklistsPage() {
   };
 
   return (
-    <main className="mx-auto grid max-w-5xl gap-8 px-4 py-8 md:grid-cols-[16rem_1fr]">
+    <main className="mx-auto grid max-w-5xl items-start gap-8 px-4 py-8 md:grid-cols-[19rem_minmax(0,1fr)]">
       <section aria-labelledby="lists">
-        <h1 id="lists" className="text-2xl font-bold">Checklists</h1>
-        <ul className="mt-4 space-y-1">
-          {list.map((c) => (
-            <li key={c.id}>
-              <button
-                onClick={() => open(c)}
-                aria-current={editing?.id === c.id}
-                className={`w-full rounded-md px-3 py-2 text-left ${editing?.id === c.id ? "bg-ink text-white" : "hover:bg-card"}`}
-              >
-                {c.name}
-                <span className="block text-sm opacity-75">{c.steps.length} steps{c.active ? "" : ", hidden"}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <Button className="mt-4 w-full" onClick={() => open(BLANK)}>New checklist</Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 id="lists" className="text-2xl font-bold">Checklists</h1>
+          <Button onClick={() => open(BLANK)}><Plus aria-hidden className="size-4" /> New checklist</Button>
+        </div>
+        <div className="mt-4">
+          {listError ? <ErrorText>{listError}</ErrorText> : list === null ? (
+            <p role="status" className="text-ink-soft">Loading checklists…</p>
+          ) : list.length === 0 ? (
+            <Empty icon={ClipboardCheck} title="No checklists yet">Create a checklist to guide a technician through a call.</Empty>
+          ) : (
+            <ul className="space-y-2">
+              {list.map((c) => {
+                const critical = c.steps.filter((s) => s.critical).length;
+                return (
+                  <li key={c.id}>
+                    <button
+                      onClick={() => open(c)}
+                      aria-current={editing?.id === c.id ? "true" : undefined}
+                      className={`flex min-h-16 w-full items-center gap-3 rounded-xl border px-3 py-3 text-left ${editing?.id === c.id ? "border-blue bg-blue/5" : "border-rule bg-card hover:border-blue"}`}
+                    >
+                      <ClipboardCheck aria-hidden className="size-5 shrink-0 text-blue" />
+                      <span className="min-w-0">
+                        <span className="block wrap-anywhere font-bold">{c.name}</span>
+                        <span className="mt-1 block text-sm text-ink-soft tabular-nums">
+                          {c.steps.length} {c.steps.length === 1 ? "step" : "steps"}, {critical} critical{c.active ? "" : ", hidden"}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </section>
 
       {editing ? (
-        <form onSubmit={save} className="space-y-5" aria-label="Edit checklist">
+        <form ref={editor} tabIndex={-1} onSubmit={save} className="space-y-5 rounded-xl border border-rule bg-card p-4 sm:p-6" aria-labelledby="checklist-editor">
+          <h2 id="checklist-editor" className="text-lg font-bold">{editing.id ? "Edit checklist" : "New checklist"}</h2>
           <Field label="Name">
             <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required maxLength={120} />
           </Field>
@@ -73,7 +101,7 @@ export default function ChecklistsPage() {
             <Input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} maxLength={500} />
           </Field>
           <Field label="Steps" hint="One step per line. Start a line with ! to mark a critical step. Changes apply to new calls only; past reports keep their steps.">
-            <Textarea value={stepsText} onChange={(e) => setStepsText(e.target.value)} rows={12} required className="font-mono text-sm" />
+            <Textarea value={stepsText} onChange={(e) => setStepsText(e.target.value)} rows={12} required />
           </Field>
           <label className="flex items-center gap-3">
             <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} className="size-5" />
@@ -82,8 +110,8 @@ export default function ChecklistsPage() {
           <ErrorText>{error}</ErrorText>
           <Button type="submit" variant="primary">{editing.id ? "Save changes" : "Create checklist"}</Button>
         </form>
-      ) : (
-        <p className="self-center text-ink-soft">Choose a checklist to edit, or make a new one.</p>
+      ) : !!list?.length && (
+        <div className="hidden md:block"><Empty icon={ClipboardCheck} title="Choose a checklist">Select a checklist to edit its steps.</Empty></div>
       )}
     </main>
   );

@@ -31,7 +31,6 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(16))
-    password_hash: Mapped[str] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 

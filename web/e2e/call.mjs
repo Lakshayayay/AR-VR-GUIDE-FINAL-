@@ -1,7 +1,7 @@
 // End-to-end check of a whole call, in two browsers with fake cameras.
 //
-// Needs both servers running (see README) and three accounts:
-//   technician "ravi", expert "mehta" (Dr. Mehta), both with password E2E_PASSWORD.
+// Needs both servers running (see README) and two people:
+//   technician "ravi" (Ravi Kumar), expert "mehta" (Dr. Mehta).
 // Run: npm run e2e        Screenshots go to SHOTS_DIR (default: ./test-results).
 // If Playwright's own browser is not installed: npx playwright install chromium (or set CHROME_PATH).
 
@@ -14,8 +14,8 @@ import ts from "typescript";
 import { makeClip, makeObjectClip } from "./make-clip.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:3000";
-const PASSWORD = process.env.E2E_PASSWORD ?? "demo-pass-1";
 const SHOTS = process.env.SHOTS_DIR ?? "test-results";
+const NAMES = { mehta: /Dr\. Mehta/, ravi: /Ravi Kumar/ };
 const FAKE_HAND = process.env.E2E_FAKE_HAND === "1";
 mkdirSync(SHOTS, { recursive: true });
 // The technician's camera plays a textured panel with a blue dot (see make-clip.mjs): by default the camera
@@ -35,7 +35,7 @@ const browser = await chromium.launch({
 });
 const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
-async function signIn(context, username) {
+async function openAs(context, username) {
   await context.grantPermissions(["camera", "microphone"], { origin: BASE });
   await context.addInitScript((frequency) => {
     const getMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -109,9 +109,7 @@ async function signIn(context, username) {
   page.on("requestfinished", (r) => !r.url().startsWith(BASE) && /^https?:/.test(r.url()) && outside.push(r.url()));
   pages.push(page);
   await page.goto(`${BASE}/login`, { waitUntil: "networkidle" }); // let the page's script load first
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: NAMES[username] }).click();
   return page;
 }
 
@@ -121,7 +119,7 @@ const outside = [];
 const pageErrors = [];
 
 try {
-  const expert = await signIn(await browser.newContext({ viewport: { width: 1440, height: 900 } }), "mehta");
+  const expert = await openAs(await browser.newContext({ viewport: { width: 1440, height: 900 } }), "mehta");
   await expert.waitForURL("**/expert");
   await expert.getByText("No one is waiting").waitFor();
   // Exercise the production drawing renderer on real canvas pixels, including overlapping cutouts.
@@ -176,7 +174,7 @@ try {
       };
     }, handChunks);
   }
-  const tech = await signIn(techContext, "ravi");
+  const tech = await openAs(techContext, "ravi");
   await tech.waitForURL("**/tech");
   await tech.getByLabel("Aircraft").fill("VT-ABC");
   await tech.getByLabel("Checklist").selectOption({ label: "Engine assembly check" });
@@ -375,7 +373,28 @@ try {
   await Promise.all([expert, tech].map((p, i) => p.waitForFunction((before) => findColours().orangeCount >= before * 0.98, beforeRub[i], { timeout: 5000 })));
   step("partial rubbing and undo update both screens");
   await expert.getByRole("button", { name: "Resume" }).click();
-  await expert.getByRole("button", { name: "Clear all" }).click();
+  if (FAKE_HAND) {
+    // A thumbs-down held for a second clears every drawing, the expert's too.
+    await tech.getByText("Picture frozen by Dr. Mehta").waitFor({ state: "detached" });
+    await tech.getByRole("button", { name: "Clear all" }).waitFor();
+    await tech.waitForTimeout(300); // resuming starts a new hand worker
+    await tech.evaluate(() => {
+      const p = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
+      p[0] = { x: 0.5, y: 0.62, z: 0 };
+      p[5] = { x: 0.465, y: 0.55, z: 0 };
+      p[17] = { x: 0.535, y: 0.55, z: 0 };
+      p[4] = { x: 0.7, y: 0.5, z: 0 }; // thumb well away from the index fingertip: not a pinch
+      window.e2eHandWorker.postMessage({ testHand: { landmarks: p, gesture: "Thumb_Down", score: 0.95 } });
+    });
+    await tech.getByText("Keep holding to clear all drawings…").waitFor({ timeout: 5000 });
+    await shot(tech, "04d-tech-clear-hold");
+    await tech.getByText("All drawings cleared.").waitFor({ timeout: 5000 });
+    await expert.getByText("All drawings were cleared.").waitFor({ timeout: 5000 });
+    await tech.getByRole("button", { name: "Clear all" }).waitFor({ state: "detached", timeout: 5000 });
+    await tech.getByText("Keep holding to clear all drawings…").waitFor({ state: "detached" });
+    await tech.evaluate(() => window.e2eHandWorker.postMessage({ testHand: null }));
+    step("synthetic thumbs-down held for a second clears all drawings on both screens");
+  } else await expert.getByRole("button", { name: "Clear all" }).click();
 
   await expert.getByRole("button", { name: "Freeze" }).click();
   await tech.getByText("Picture frozen by Dr. Mehta").waitFor();
@@ -404,12 +423,28 @@ try {
     // Wait until the step's result has come back, or the next click would hit the same step again.
     for (let t = 0; t < 50 && (await open.count()) >= before; t++) await expert.waitForTimeout(100);
   }
+  // With every step answered, the technician's card gets out of the way by itself; it can be opened and hidden again.
+  const doneCard = tech.getByText(/steps have a result/);
+  await doneCard.waitFor();
+  const doneChip = tech.getByRole("button", { name: "Checklist done, waiting for sign-off" });
+  await doneChip.waitFor({ timeout: 8000 });
+  await doneCard.waitFor({ state: "detached" });
+  await doneChip.click();
+  await doneCard.waitFor();
+  await tech.getByRole("button", { name: "Hide" }).click();
+  await doneChip.waitFor();
+  await shot(tech, "06b-tech-checklist-done");
+  step("the finished checklist shrinks by itself, reopens with a tap and hides again");
+
   await panel.getByRole("button", { name: "Sign off checklist" }).click();
   await panel.getByText("SIGNED OFF").waitFor();
-  await tech.getByText("SIGNED OFF").waitFor();
+  await tech.getByText("SIGNED OFF", { exact: true }).waitFor();
   await shot(tech, "07-tech-signed-off");
   await shot(expert, "08-expert-signed-off");
-  step("checklist signed off; stamp shows on both sides");
+  await tech.getByRole("button", { name: "Signed off", exact: true }).waitFor({ timeout: 8000 });
+  await tech.getByText("SIGNED OFF", { exact: true }).waitFor({ state: "detached" });
+  await shot(tech, "07b-tech-signed-off-shrunk");
+  step("checklist signed off; stamp shows on both sides, then shrinks on the technician's");
 
   // The technician can end the call while the expert is still recording.
   await expert.getByRole("button", { name: "Record" }).click();

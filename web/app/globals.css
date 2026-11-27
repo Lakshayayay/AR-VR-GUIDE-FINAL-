@@ -20,6 +20,11 @@
   --color-normal: #2e9e5b;
   --color-normal-bright: #4cc47f;
   --color-advisory: #2aa7d8;
+  /* Darker partners for words on a light tint of a status colour (each at least 4.5:1). */
+  --color-warn-ink: #9c1f15;
+  --color-caution-ink: #7a5200;
+  --color-normal-ink: #1b6b3f;
+  --color-advisory-ink: #0e5f7e;
 
   --animate-stamp: stamp 180ms cubic-bezier(0.3, 1.6, 0.6, 1) both;
   --animate-ring: ring 1.2s ease-out infinite;

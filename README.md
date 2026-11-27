@@ -2,12 +2,14 @@
 
 Live remote help for aircraft maintenance. A technician points a phone camera at the job; a remote expert sees it, draws on it, walks through a checklist and signs it off. Every call is saved as a printable report.
 
-**Augmented reality:** drawings can follow the part under them as the camera moves. The technician can pinch to draw, or hold an open palm still briefly and then rub to erase portions of a drawing. Undo and Clear all are buttons; Guide shows or hides the hand outline. These features run on the device from locally served files. They have automated coverage, but real-hand and phone acceptance is still outstanding: see [`docs/history/AR_CORE_PLAN.md`](docs/history/AR_CORE_PLAN.md).
+Drawings can follow the part as the camera moves. The technician can pinch to draw, rub with an open palm to erase part of a drawing, or hold a thumbs-down for one second to clear the screen. The tracking runs on the device using files served by the app. Real-hand and phone checks are still open. See [the AR core plan](docs/history/AR_CORE_PLAN.md).
+
+**Use ArGuide on your computer or a private network you trust.** People choose a name when they open the app. Anyone who can reach it can act as any person, including an admin, so keep it off the public internet.
 
 | Folder | What it is |
 |---|---|
 | `web/` | The screens (Next.js). Technician phone view, expert console, sessions, reports, admin |
-| `backend/` | The server (Python, FastAPI). Sign-in, saving, and the live link between the two sides |
+| `backend/` | The server (Python, FastAPI). People, records and the live link between the two sides |
 | `docs/` | `DEPLOYMENT.md` (single-address pilot and self-hosted relay setup) and `history/` (the finished plans: refurbish, AR core, review round) |
 | `deploy/` | Example Caddy, systemd and coturn files for the pilot deployment |
 | `STATUS.md` | Where the work stands today. Read this first |
@@ -17,11 +19,10 @@ The first version of the app (old Node server and two Vite apps) was removed on 
 
 ## Run it on your computer
 
-You need Python 3.12 or newer with [uv](https://docs.astral.sh/uv/), and Node.js 20 or newer.
+You need Python 3.12 or newer with [uv](https://docs.astral.sh/uv/) and Node.js 24. The web tests run TypeScript directly.
 
 ```bash
 npm run setup                                    # install both parts once (also copies the AR files into web/public/vendor)
-cd backend && uv run python -m app.cli create-user admin "Your Name" admin   # first account (asks for a password)
 ```
 
 Then, in two terminals:
@@ -31,49 +32,52 @@ npm run dev:api     # server on http://127.0.0.1:8000
 npm run dev:web     # screens on http://localhost:3000
 ```
 
-Open http://localhost:3000 and sign in. Add technicians and experts on the **People** page. If port 3000 is already used by another program, start the screens with `cd web && npx next dev -p 3100` and open that address instead.
+Open http://localhost:3000. On a fresh database, enter your name to create the first admin. Add technicians and experts on the **People** page and edit the three starter checklists on **Checklists**. If port 3000 is busy, start the screens with `cd web && npx next dev -p 3100` and open that address instead.
 
-## Try a call without signing in (local testing only)
+If you are moving from the old password-based database, keep that database and start the API with a new `DATA_DIR` so ArGuide can create its current tables.
 
-Start the server in test mode instead of `npm run dev:api`:
+## Try a call in two tabs
 
-```bash
-cd backend && DEV_NO_LOGIN=true uv run uvicorn app.main:app --port 8000
-```
-
-Then open two tabs in the same browser, expert first:
+Open two tabs in the same browser and choose a person in each, expert first. You can also open the pages directly with the usernames you set on **People**.
 
 - http://localhost:3000/expert?as=EXPERT_USERNAME
 - http://localhost:3000/tech?as=TECHNICIAN_USERNAME
 
-Each tab acts as the person named after `?as=`. Never use test mode on a hosted site; the server refuses it when `COOKIE_SECURE=true`.
+Each tab remembers the person you chose. Use **Switch person** to choose someone else.
 
 To see the numbers behind hand and drawing behaviour (tracker and hand speed, gesture, pinch size, every drawing's state), add `?debug=ar` to a call page's address.
 
 ## Try a call with a phone
 
-A phone only lets a web page use its camera over https. On the same Wi-Fi as your computer:
+A phone needs HTTPS to use its camera. On the same trusted Wi-Fi network as your computer, stop the regular web server and start the HTTPS version.
 
 ```bash
 cd web && npm run dev:phone     # https on your computer's network address, port 3000
 ```
 
-Open `https://<your-computer's-address>:3000` on the phone, accept the certificate warning, and sign in as a technician. Sign in as an expert on the computer.
+Open `https://<your-computer's-address>:3000` on the phone, accept the local certificate warning, and choose a technician. Choose an expert on the computer.
 
 ## Checks
 
 ```bash
-npm test            # server tests: sign-in, privacy between calls, a whole call, abandoned and missed calls
-cd web && npm test  # AR tests: drawings follow a moving, zooming, turning, tilting camera; pinch and gestures
-npm run e2e         # two browsers run a whole call with a moving test panel and generated audio from both sides;
-                    # checks drawings, saved audio/video and that no requests leave our server
-                    # (both servers must be running; needs accounts "ravi" (technician) and "mehta"
-                    # (expert, named Dr. Mehta) with password demo-pass-1)
+npm test            # first-admin setup, roles, call flow, storage and relay credentials
+npm --prefix web test
+cd web && npm run typecheck && npm run build
 ```
 
-The e2e signs in with passwords, so the Python server must run in **normal** mode. With `DEV_NO_LOGIN=true` everyone acts as the first expert and the test's "technician" becomes the expert.
+The two-browser check runs a complete call with generated camera and audio input. Create its two people in a temporary directory and start the API from `backend/`. Run these commands in the same terminal so they share `ARGUIDE_TEST_DATA`.
 
-- `E2E_FAKE_HAND=1`: also feeds generated hand landmarks through the gesture flow (open palm rubs, a pinch draws one line). It does not test recognition of a real hand.
+```bash
+cd backend
+export ARGUIDE_TEST_DATA="$(mktemp -d)"
+DATA_DIR="$ARGUIDE_TEST_DATA" uv run python -m app.cli create-user ravi "Ravi Kumar" technician
+DATA_DIR="$ARGUIDE_TEST_DATA" uv run python -m app.cli create-user mehta "Dr. Mehta" expert
+DATA_DIR="$ARGUIDE_TEST_DATA" ICE_SERVERS='[]' uv run uvicorn app.main:app --port 8001
+```
+
+From `web/` in another terminal, start `BACKEND_URL=http://127.0.0.1:8001 npm run dev -- -p 3200`. To check the production build, run `BACKEND_URL=http://127.0.0.1:8001 npm run build` and then `npm run start -- -H 127.0.0.1 -p 3200`. With both servers running, use `BASE_URL=http://127.0.0.1:3200 npm run e2e` from the repo root. Install Chromium with `npx playwright install chromium` from `web/` or set `CHROME_PATH` to a local browser. Stop the test servers and remove the temporary data when finished.
+
+- `E2E_FAKE_HAND=1`: also feeds generated hand landmarks through the gesture flow (open palm rubs, a pinch draws one line, a held thumbs-down clears all). It does not test recognition of a real hand.
 - `E2E_CLIP=object`: the test camera stays still while a small card carrying the dot moves, to check that drawings follow an object and not the background.
 - `BASE_URL` (default `http://127.0.0.1:3000`) and `CHROME_PATH` choose the site and the browser, for example `next dev` or Brave.
 
