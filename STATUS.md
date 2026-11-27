@@ -1,10 +1,12 @@
 # ArGuide status
 
-**Last updated:** 2026-11-28 · **Branch:** `feature/hands-free-clear` (changes not committed) · **Last commit:** `3f73379` (password removal, also the tip of `change/remove-passwords`; nothing pushed). The merge of PR #1 is `4d31085`; the old prototype is the tag `pre-refactor` = `599369b`
+**Last updated:** 2026-11-28 · **Branch:** `feature/ui-refresh` (UI changes in the working tree) · **Last commit:** `ad787d8` (hands-free clear and shrinking checklist card). Local `main` and `origin/main` are at `f70ef7e`. The merge of PR #1 is `4d31085`; the old prototype is the tag `pre-refactor` = `599369b`.
 
-> **Hands-free clear all and a shrinking checklist card (2026-11-28, uncommitted).** On the technician's screen: a thumbs-down held for 1 s clears every drawing (warning beep and banner first; letting go early cancels), and the finished checklist shrinks to a small label after 4 s. Checks pass (§2). **Not tried with a real hand yet.** Plan: [`docs/history/HANDS_FREE_PLAN.md`](docs/history/HANDS_FREE_PLAN.md).
+> **UI refresh and clean start (2026-11-28).** ArGuide creates a first admin on a fresh database and keeps three editable starter checklists. The Flight line refresh includes role-specific Home screens, desktop navigation and phone tabs, responsive records, a printable report and updated People and Checklist screens. Call notifications leave the call controls available. The previous local test database was removed (§3).
 
-> **Sign-in is removed for now (committed 2026-11-28 as `3f73379`).** No passwords, cookie, tokens or `DEV_NO_LOGIN` mode. `/login` is a "Who are you?" list; a tab can also be opened with `?as=<username>`. The server believes whoever the app says it is, so **keep it off the public internet**. Code comments say Google sign-in will replace this. `README.md`, `AGENTS.md`, `backend/.env.example` and `docs/DEPLOYMENT.md` still describe passwords.
+> **Hands-free clear all and a shrinking checklist card (2026-11-28, committed as `ad787d8`).** On the technician's screen: a thumbs-down held for 1 s clears every drawing (warning beep and banner first; letting go early cancels), and the finished checklist shrinks to a small label after 4 s. Checks pass (§2). **Not tried with a real hand yet.** Plan: [`docs/history/HANDS_FREE_PLAN.md`](docs/history/HANDS_FREE_PLAN.md).
+
+> **ArGuide has no sign-in.** The start screen lists the people who can use the app. A tab can also be opened with `?as=<username>`. Anyone who can reach the app can act as any person, so **keep it off the public internet**. See [the private-network setup](docs/DEPLOYMENT.md).
 
 > **Where things stand (2026-11-21).** The owner tried the app on their computer after the dark-room fixes, said everything works fine, and accepted it as the base to build on. The branch was cleaned up (old prototype removed, plans moved to `docs/history/`, commits grouped by topic) and merged into `main`. All automated checks pass (§2). Still unverified, and not required for acceptance: real phones, a hosted site, a relay on a real host, real microphone audio, and real hands in more than one room. **Next phase: a full-stack product layer** on top of the AR core, which stays as it is (OpenCV.js and MediaPipe). The owner described it as product management for training and factory services as software; it still has to be defined with them (§8).
 
@@ -25,14 +27,14 @@ ArGuide is live remote help for aircraft maintenance. A technician points a phon
 | Milestone (plan §9) | State |
 |---|---|
 | M0 safety net | Done. Old work committed as `599369b`, tagged `pre-refactor`. Plan and competitor screenshots in `docs/` |
-| M1 Python server | Done (built straight to the signed-in protocol, see plan §13) |
+| M1 Python server | Done. FastAPI handles records and Socket.IO handles live calls |
 | M2 Next.js shell and design system | Done |
 | M3 live call in Next.js | Done |
-| M4 accounts and real data | Done |
+| M4 people and records | Done. The first admin is created in the app. People choose a name to enter |
 | M5 P1 features | Done, except the QR code (a "Copy link" button exists) |
 | M6 speed, polish, release | **Partly done.** Single-origin configuration and relay credentials are prepared (`deploy/`, `docs/DEPLOYMENT.md`); a live relay, a hosted deployment, real-device and performance acceptance are unverified and not required now. See §8 |
 
-**Git:** the work is on `main`, merged from `refurbish/nextjs-python` with a merge commit (PR #1, merge commit `4d31085`). It is saved as small commits grouped by topic: server relay credentials, server AR anchors, the AR core and call screens, the e2e test, deployment examples, docs, removal of the old prototype, docs cleanup, and one fix. The branches `features`, `ai-copilot` and `refurbish/nextjs-python` were deleted after the merge (their work is in `main`); the tag `pre-refactor` (`599369b`) marks the old prototype. The competitor screenshots (`docs/research/screenshots/*.png`) are git-ignored and exist only on the owner's Mac, because they are other companies' pages and the repo is public. Commit and push only when the owner asks.
+**Git:** the refurbished base is on `main` (PR #1, merge commit `4d31085`). `feature/ui-refresh` includes two later commits, `3f73379` (password removal) and `ad787d8` (hands-free clear and shrinking checklist card), plus working-tree changes for the refresh. Neither commit is in `origin/main`. The tag `pre-refactor` (`599369b`) marks the old prototype. Competitor screenshots (`docs/research/screenshots/*.png`) stay local because the repo is public.
 
 **Earlier improvement work:** delayed updates cannot recreate removed drawings. Tracking and hand recognition consume the same source image and placement; hand-covered areas are excluded from anchor features. Partial erasures are shared, deduplicated and undoable after rejoin. Analysis can fall from 640 to 480 pixels if tracking is slow. Photos and consented recordings use the composed picture. Generated-camera tests check rubbing through the live socket, saved AR evidence and distinct generated audio from each side. Real-hand recognition and real microphone audio remain unverified.
 
@@ -40,15 +42,19 @@ ArGuide is live remote help for aircraft maintenance. A technician points a phon
 
 | Area | Feature |
 |---|---|
-| Accounts | No sign-in for now: pick a person. Three roles: technician, expert, admin. Admin adds people, changes roles, removes access |
+| People | A fresh database prompts for the first admin. Only one first-admin request can succeed. An admin adds people, changes roles or removes access. People choose a name to enter |
 | Calling | Technician starts a call (aircraft + optional checklist). Experts who are marked "Available" get a ringing dialog. Only one expert can answer. An unanswered call becomes "missed" after 45 s on the phone (server also expires after 60 s). Technician can copy a link for an expert |
 | Live call | Video and voice (technician sends video and audio, expert sends audio). Drawing: arrow, circle, box, pen, text, 4 expert colours. The technician draws in green. Undo (own shapes), clear all, pointer, freeze/resume, mute, sound, camera flip, torch (where supported), screen kept awake. Connection bars and the expert's numbers are measured (delay, frames, size, speed, loss) |
 | Work | Checklist step by step (technician) or full list (expert), "problem" needs a note, expert sign-off when every step has a result, inspector-style **SIGNED OFF stamp** on both sides. On the technician's screen the finished card (and later the stamp) shrinks after 4 s to a small label that reopens on a tap. Chat, notes, photos (video frame plus drawings), recording only after the technician allows it |
-| Records | Sessions list with search (aircraft, names, checklist, `SES-` number) and filters (status, period). Printable report (facts, checklist with stamp, photos, recording, notes, timeline). Real 7-day numbers on the expert's Calls page. Checklist editor |
+| Records | Sessions search (aircraft, names, checklist, `SES-` number) and filters (status, period), with cards at phone widths. Printable report with checklist results, media, notes and timeline. The expert Home shows seven-day totals. The checklist editor starts with three editable templates |
 | AR (updated 2026-11-21) | In generated-camera tests, drawings follow a moving textured surface on both screens, and also a small object that moves while the camera is still (e.g. a card sliding on a bench). On the owner's real dark-room frame the tracker now finds enough points for large drawings; bare areas are flagged. Line styles: **solid** = stuck to the part, or just lost (held solid for 0.5 s), or fixed to the screen because nothing here can hold it; **faded and dashed** = was attached, the part is out of view (the screen says so in words). Hands-free input: point, pinch to draw (smooth curve), an open palm that moves rubs out parts of marks at once. A **thumbs-down held for 1 s clears all drawings**, the expert's too (beep, buzz and banner when the hold starts; only a confident reading counts; both sides are told). Guide toggles the hand outline. The Hands button names what is seen. Undo is a button; Clear all is a button or the thumbs-down. `?debug=ar` on a call page shows speeds, gesture, pinch size and every drawing's state. Hand behaviour is tested with synthetic landmarks and generated pictures, never a real moving hand |
 | Robustness | Each call has its own private room. Rejoining restores drawings and freeze. A call left with nobody connected for 2 minutes is ended automatically. Replies to an outdated video offer are ignored |
 
 ### Checks (2026-11-21, final tree before the merge; rows marked historical were not re-run)
+
+**UI refresh (2026-11-28):** 13 server tests, 58 web tests, TypeScript, and the default and webpack production builds passed. The ordinary call, generated-hand call, and moving-card call with generated hands passed in Chrome for Testing on both `next start` and `next dev`. During a parallel repeat, the production generated-hand case timed out waiting for a pinch to end, and the development moving-card case timed out waiting for the rubbing banner to clear. Both passed in isolated reruns. The cause was not confirmed.
+
+The production browser review covered 35 screenshots at desktop and phone widths, starting from an empty database. It exercised first-admin setup, starter editing, adding and restoring a person, switching people, the call controls during notifications, report print styling, and mobile session search and navigation. Screenshots use generated camera video. The author reviewed the changes. No independent reviewer ran.
 
 **Re-run 2026-11-28 on `feature/hands-free-clear` (includes the password removal):** server tests 10/10, web tests 58/58, types clean, `next build` (default and `--webpack`) pass. Production-build two-browser call on spare ports with throwaway data: plain, synthetic hand, and moving card + synthetic hand all pass. One further synthetic-hand run failed at the ringtone wait (the call dialog showed, no ring sound was detected within 10 s) while the Mac's load average was above 35; the rerun passed; cause not confirmed. **Not run:** `next dev` and Brave.
 
@@ -82,12 +88,13 @@ ArGuide is live remote help for aircraft maintenance. A technician points a phon
 
 ```bash
 npm run setup                                        # once: uv sync + npm install
-cd backend && uv run python -m app.cli create-user <username> "<Full Name>" <technician|expert|admin>
 npm run dev:api                                      # Python on :8000 (data in backend/data/, git-ignored)
 npm run dev:web                                      # Next.js on :3000
 ```
 
-**Choosing a person** (no passwords): open http://localhost:3000 and pick one, or open two tabs: `http://localhost:3000/expert?as=<expert username>` and `http://localhost:3000/tech?as=<technician username>`. The tab remembers who it is (sessionStorage), so two tabs in one browser can be two people. A database made before the password removal still requires a password column: use a fresh `DATA_DIR`.
+**First run:** open http://localhost:3000 and enter your name to create the first admin. Add technicians and experts under **People**. Use **Checklists** to edit the starter templates. The git-ignored local test database was removed on 2026-11-28 after confirming it contained only the test people, one test call and the three original starters. The next API start recreates the starter checklists.
+
+**Choosing a person:** choose a name when opening the app, or open two tabs with `http://localhost:3000/expert?as=<expert username>` and `http://localhost:3000/tech?as=<technician username>`. The choice is remembered per tab. If you have a database from before password removal, keep it and use a fresh `DATA_DIR`.
 
 **Phone on the same Wi-Fi:** `cd web && npm run dev:phone` (https, self-signed; the camera needs https).
 
@@ -100,15 +107,15 @@ npm run dev:web                                      # Next.js on :3000
 | Path | What it does |
 |---|---|
 | `backend/app/main.py` | Starts FastAPI and Socket.IO together. On start, watches calls still marked active |
-| `backend/app/config.py` | All settings from environment variables (see `backend/.env.example`). Generates `data/secret.key` if `SECRET_KEY` is unset |
+| `backend/app/config.py` | Environment settings, including the data directory, origins and video connection settings |
 | `backend/app/db.py` | SQLAlchemy tables, JSON shapes sent to the browser, the 3 seed checklists, `init_db()` (create_all, no migrations yet) |
-| `backend/app/auth.py` | Who is asking (header `x-arguide-user`, or `?user=` on GET) and role checks. No sign-in |
+| `backend/app/auth.py` | First-admin setup, chosen person (header `x-arguide-user`, or `?user=` on GET) and role checks |
 | `backend/app/api.py` | REST: checklists, people, sessions, file upload/download, stats, ICE config |
 | `backend/app/realtime.py` | Live connection: call life cycle, relays, checklist, sign-off, chat, abandoned-call timer |
 | `backend/app/cli.py` | `create-user` command |
 | `backend/tests/test_call_flow.py` | Starts a real server; runs whole calls with 3 to 4 people |
-| `web/app/(auth)/login` | "Who are you?" pick-a-person page |
-| `web/app/(app)/layout.tsx` → `components/app-provider.tsx` | Loads the signed-in user, opens the live connection, expert availability, incoming-call dialog and ring, toasts |
+| `web/app/(auth)/login` | First-admin setup and person selection |
+| `web/app/(app)/layout.tsx` → `components/app-provider.tsx` | Loads the chosen person, opens the live connection, handles expert availability, ringing and notifications |
 | `web/app/(app)/(nav)/…` | Pages with the top bar: `tech`, `expert`, `expert/session/[id]` (console), `sessions`, `sessions/[id]` (report), `checklists`, `admin/users` |
 | `web/app/(app)/tech/session/[id]` | Technician's full-screen phone call (no top bar) |
 | `web/components/call/use-call.ts` | **All live-call logic** shared by both sides (join, WebRTC, drawings, steps, chat, photo, recording) |
@@ -142,7 +149,7 @@ npm run dev:web                                      # Next.js on :3000
 | Expert | `signoff` → ack | Saved; room gets `signoff:update` |
 | Both | `record:request` → `record:answer {allowed}` → `record:state {on}` | Consent before recording |
 
-REST endpoints (all under `/api`, docs at `/api/docs` while running): `auth/people|me`, `config`, `checklists` (GET/POST/PUT), `users` (admin), `sessions` (list with `q`, `status`, `days`), `sessions/{id}`, `sessions/{id}/files` (photo/recording upload), `files/{event_id}`, `stats`.
+REST endpoints (all under `/api`, docs at `/api/docs` while running): `auth/people`, `auth/me`, `auth/setup` (POST), `config`, `checklists` (GET/POST/PUT), `users` (admin), `sessions` (list with `q`, `status`, `days`), `sessions/{id}`, `sessions/{id}/files` (photo/recording upload), `files/{event_id}`, `stats`.
 
 Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_events` (chat, note, photo, recording), `step_results`, `checklists`.
 
@@ -157,11 +164,12 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 | Closed-network ready | Nothing may call outside services at runtime (fonts bundled by `next/font`, sounds generated, no CDNs, AR files in `public/vendor`). Only exception: the default STUN server in `ICE_SERVERS`, which can be overridden. Enforced in the browser by `Content-Security-Policy: connect-src` in `web/next.config.ts` |
 | "Flight line" design (owner chose it) | Live-call screens dark (`live` class, `hangar` #18222b); everything else light (`paper` #f7f9fa). Status colours only for status (warn, caution, normal, advisory). Typeface B612 / B612 Mono. The inspector stamp is the one bold element. Technician buttons ≥ 56 px with a word under every icon. Sentence case; buttons say what happens. Tokens are in `web/app/globals.css` |
 | Few dependencies | Web runtime: next, react, react-dom, socket.io-client, lucide-react, plus `@techstark/opencv-js` and `@mediapipe/tasks-vision` for the AR core (loaded only on call pages, in workers). Native HTML instead of UI libraries |
-| Same-origin API | Browser talks to Next.js for `/api`; `next.config.ts` rewrites requests to Python so the cookie stays first-party. The live socket can connect directly to a separately hosted Python server using `NEXT_PUBLIC_SOCKET_URL` and a short-lived token. Vercel now supports WebSockets; this app's Python process, in-memory live state and storage still need an appropriate backend configuration. This version's hosting is unverified. |
+| Same-origin API | `next.config.ts` forwards `/api` and `/socket.io/` to Python. The live socket can also connect to a private Python server using `NEXT_PUBLIC_SOCKET_URL`. The chosen person travels with requests. Hosted behaviour remains unverified. |
 | App accepted; old prototype removed (owner, 2026-11-21) | The owner said everything works and accepted the app. `ArGuide/` was deleted from the repo; the old code is in git under the tag `pre-refactor`. The old Gemini key file was kept outside the repo (owner's home folder) for the AI phase |
 | Next phase is full-stack product work, not AI (owner, 2026-11-21) | Product management for training and factory services as software, on top of the AR core. Scope not defined yet: plan it with the owner first. The AI phase has not started |
 | AR stack stays as it is (owner, 2026-11-21) | OpenCV.js and MediaPipe stay. three.js was only used in the removed old prototype; the new app has no 3D library (real 3D is the parked Stage 4 trial) |
 | Hands-free clear all; checklist card gets out of the way (owner, 2026-11-28) | Thumbs-down held 1 s (chosen over a V sign and a fist). It cannot be undone, so it needs a confident `Thumb_Down` for both 1 s and 6 pictures (`CLEAR_*` in `web/lib/ar/hands.ts`). The finished checklist shrinks by itself after 4 s (chosen over a Hide link only, or removing it) |
+| Clean start and livelier navigation (owner, 2026-11-28) | Remove the local test call and made-up people. Let the first user create an admin and keep the three editable starter checklists. Keep Flight line, with a Home hub, top-bar icons on desktop, and bottom tabs on phones. The owner approved the full plan on 2026-11-28. |
 | Work goes through pull requests (2026-11-21) | Branch off `main`, open a PR, merge with a merge commit so the separate commits stay in the history (`AGENTS.md`) |
 | Old Vercel sites (owner, 2026-11-21) | `ar-vr-guide-technician` and `ar-vr-guide-expert` (Vite, built from the removed `ArGuide/`) had their "Ignored Build Step" set to `exit 0`: they no longer rebuild and keep serving their last version. The old code's commits mention Render for the old server; it was not touched |
 
@@ -173,7 +181,7 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 - **Newer Chrome makes `scrollIntoView()` return a Promise.** Never return a call's value from a `useEffect` arrow; use braces.
 - **Socket.IO through Next rewrites** needs `skipTrailingSlashRedirect: true` and the `/socket.io/` rewrite with its trailing slash. [Vercel now supports WebSockets](https://vercel.com/changelog/websocket-support-is-now-generally-available); do not assume that proves this Python app's stateful backend works on a particular deployment.
 - **Dev server blocks non-localhost origins.** `allowedDevOrigins` in `next.config.ts` includes 127.0.0.1 and LAN ranges.
-- **Forms with passwords use `method="post"`**, so a click before the page script loads can't put the password in the address bar.
+- **First-admin setup is one transaction.** The first person is created only when the users table is empty. Wait for another setup request to finish before checking it again.
 - **OpenCV.js 5 has no `goodFeaturesToTrack`.** Use `new cv.GFTTDetector(n, quality, minDistance).detect(...)`. Constructors take positional numbers. A thrown number (like `7029176`) is an OpenCV C++ error, usually an empty input.
 - **Following points from picture to picture drifts** (2 px in 45 pictures). Lining up against the original anchor picture every picture removes it (`refine` in `anchor-core.ts`).
 - **Camera grain makes fake corners.** On a blank surface the corner finder returned 129 "corners" of pure noise; corners now need an absolute strength (`MIN_CORNER_STRENGTH`).
@@ -217,17 +225,14 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 
 ## 8. Next steps (in order)
 
-**Current phase:** the AR product is accepted and merged. The next phase is a **full-stack product layer** on top of it. Real Android and iPhone calls, real hands in other rooms, a hosted site, a relay on a real host and real-device performance are still unverified and are not required now. Do not claim them.
+**Current phase:** the owner asked to wrap up ArGuide with the UI refresh, clean start, and merge into `main`. The owner approved the plan and asked to finish it. Real Android and iPhone calls, real hands in other rooms, a hosted site, a relay on a real host and real-device performance remain unverified.
 
-**Waiting on the owner:**
-0. Try the thumbs-down and the checklist card with a real webcam, then say whether to commit `feature/hands-free-clear` and push both branches.
-1. **Say what the product layer is.** The owner's words: product management for training and factory services as software. Not yet defined (who uses it, which screens, which data, what it replaces). The next session should interview the owner one decision at a time and write a plan in `docs/` before building anything.
-2. If a Render service for the old Node server auto-deploys from `main`, its next deploy will fail because the folder is gone. Suspend it in the Render dashboard (it was not touched from here).
+**Real-webcam check:** the thumbs-down and shrinking checklist still need a real-webcam try.
 
-**Start here next session (suggested opener, change freely):** read this file, then interview the owner about the product layer: one decision at a time, plain words, with a recommendation each (`AskUserQuestion`). Suggested order: (1) who uses it first: trainees and instructors (training), factory-floor staff (factory services), or managers; (2) the first job it must do (for example schedule and track training, log service requests, assign experts, keep records); (3) what it replaces today (spreadsheets, paper) and what data already exists; (4) one app with the AR call inside it, or separate screens that link to the call; (5) closed network or internet, and how many sites; (6) whether it is for the HAL challenge (unconfirmed, §1) or for other customers. Then write the plan in `docs/`, get the owner's approval, build on a branch, and open a PR (`AGENTS.md`).
+**Release:** the refresh is implemented and checked. The plan is archived in [`docs/history/UI_REFRESH_PLAN.md`](docs/history/UI_REFRESH_PLAN.md). The pull request and post-merge handoff are pending.
 
-**Next, in order:**
-1. Plan the full-stack layer with the owner (above). New plan goes in `docs/`; when the work is done it moves to `docs/history/`.
+**Later, in order:**
+1. Define the full-stack product layer with the owner. The owner's description was product management for training and factory services as software. The users, first job, and existing workflow are still open. Write the plan in `docs/` and get approval before building.
 2. Add Alembic (migrations) before the first change to any table (§7).
 3. AR core open items, when the owner can supply hands and phones: a real pinch and rub in several rooms and lights; the `isOpenHand` factor (1.15 on the finger joints: if a relaxed hand erases by accident, raise it); why expert drawings once did not reach the technician (not reproduced); the cause of the rare empty recording (§2 Checks); Stage 4 (real 3D on Android) needs a separate owner decision.
 4. If the owner asks: verify the hosted setup, the relay, backups and device compatibility.
@@ -238,6 +243,9 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 
 | Date | What happened |
 |---|---|
+| 2026-11-28 (UI refresh verification) | Finished first-admin setup and the Flight line refresh. Confirmed that simultaneous setup requests create one admin, removed the local test database after checking its contents, and updated the run and private-network instructions. Unit checks, types, both builds, two-browser checks and the responsive review are recorded in §2. The real-webcam check remains open. |
+| 2026-11-28 (UI refresh approval) | The owner approved the plan and asked to implement it. |
+| 2026-11-28 (UI refresh handoff) | Verified `feature/ui-refresh` at `ad787d8` with working-tree changes for first-admin setup, navigation, the start screen, and both Home screens. Local `main` and `origin/main` are at `f70ef7e`. Recorded the owner's three choices and the pending plan approval. The handoff reports 12 server and 58 web tests passed and types clean. Builds, two-browser calls, and visual checks for the refresh are pending. No servers started or data reset during the handoff. |
 | 2026-11-28 (later) | Owner reported the finished-checklist bar covering the video and asked for a hands-free way to clear all. Decisions: card shrinks by itself; thumbs-down held 1 s; commit the password removal first, then a new branch. Done: committed `3f73379`; on `feature/hands-free-clear` built both, tests first (5 new gesture tests; new e2e checks seen failing before the code). Results in §2 Checks. Dev servers on 3000/8000 still running for the owner (they may stop when the session ends); test servers on 8001/3200 stopped, test data throwaway. Reviewed by the author only (no separate reviewer). Feature not committed; nothing pushed. Unfinished: real-hand try, `next dev`/Brave runs, documents that still describe passwords. |
 | 2026-11-28 | Owner asked for a local development server. Found uncommitted password removal on `change/remove-passwords` and recorded it here. Server tests 10/10, web tests 53/53, types clean. Ran `npm run dev:api` on `127.0.0.1:8000` and `npm run dev:web` on `127.0.0.1:3000` (port 3000 was free); they were stopped later that day and **started again for the owner to inspect (now running; they may stop when the session ends)**. New local database in `backend/data` (git-ignored, kept on this computer) with demo people `ravi`, `mehta`, `asha`. The login, expert and technician pages loaded in headless Chromium with no console errors; no call was run. No commit or push. |
 | 2026-11-21 (merge) | Owner tried the app after the dark-room fixes, said everything works, accepted it as the base to build on, and asked to merge, clean up and then build a full-stack product layer. Decisions: delete the old prototype `ArGuide/` now (its old Gemini key file was moved to the owner's home folder, outside the repo); move finished plans to `docs/history/`; delete merged branches; OpenCV and MediaPipe stay; merge through a pull request with a merge commit. Done: the two old Vercel projects were set to skip builds (Ignored Build Step `exit 0`; the sites keep their last version; the PR showed "Canceled by Ignored Build Step"); the uncommitted work was saved as topic commits (the AR library and the call screens had to be one commit because `capture()` changed shape; AR commit alone: types clean, 53/53 tests; backend commit alone: 10/10); `ArGuide/` removed; docs moved, README, AGENTS and STATUS refreshed. **Found by the e2e and fixed:** once in 7 runs a 0-byte recording was saved when the technician ended the call during recording; nothing empty is saved now (cause of the empty capture not reproduced). Final checks (§2) all pass, 10 e2e runs after the fix without a failure. PR #1 merged (merge commit `4d31085`); `features`, `ai-copilot` and the refurbish branch deleted (tag `pre-refactor` kept; `ai-copilot` was `8df16d0`). The external drive disconnected briefly mid-session and stopped the servers; the repo was checked (`git fsck`, all files present). Not verified: real phones and hands, hosting. **Servers left running for review** (they may stop when the session ends): Python on `127.0.0.1:8000` with `DEV_NO_LOGIN=true` and throwaway data from an earlier session's scratchpad (`.../ce816f01-.../scratchpad/arguide-data`, holds the owner's earlier test call; accounts `ravi` technician, `mehta` expert, `asha` admin, password `demo-pass-1`), and `next dev` on `127.0.0.1:3100` (port 3000 is used by the owner's portfolio site). Links: `http://127.0.0.1:3100/tech?as=ravi` and `http://127.0.0.1:3100/expert?as=mehta`. Test servers and test data from the checks were stopped and deleted. |

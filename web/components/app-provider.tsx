@@ -18,6 +18,7 @@ interface App {
   setAvailable: (on: boolean) => void;
   accept: (session: Session) => Promise<boolean>;
   toast: (text: string) => void;
+  notice: string;
 }
 
 const AppContext = createContext<App | null>(null);
@@ -115,6 +116,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [socket, router, toast]);
 
   const inCall = pathname.startsWith("/expert/session/");
+  const technicianCall = pathname.startsWith("/tech/session/");
   const incoming = me && isExpert(me) && available && !inCall ? queue.find((s) => !dismissed.has(s.id)) : undefined;
 
   useEffect(() => {
@@ -130,7 +132,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AppContext.Provider value={{ me, socket, online, queue, available, setAvailable, accept, toast }}>
+    <AppContext.Provider value={{ me, socket, online, queue, available, setAvailable, accept, toast, notice }}>
       {children}
 
       <Dialog open={!!incoming} onClose={() => incoming && setDismissed((d) => new Set(d).add(incoming.id))} label="Incoming call">
@@ -156,13 +158,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         )}
       </Dialog>
 
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4">
-        {notice && (
-          <p role="status" className="pointer-events-auto max-w-md rounded-lg bg-ink px-4 py-3 text-sm text-white shadow-lg">
-            {notice}
-          </p>
-        )}
-      </div>
+      {!technicianCall && (
+        <div role="status" className={`no-print pointer-events-none fixed inset-x-0 z-[60] flex justify-center px-4 ${inCall ? "top-32 sm:top-24" : "bottom-24 sm:bottom-6 sm:justify-end"}`}>
+          {notice && <p className="max-w-md rounded-lg bg-ink px-4 py-3 text-sm text-white shadow-lg">{notice}</p>}
+        </div>
+      )}
     </AppContext.Provider>
   );
 }

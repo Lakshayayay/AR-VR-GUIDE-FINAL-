@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useApp } from "@/components/app-provider";
-import { Button, ErrorText, Field, Input, Select } from "@/components/ui";
+import { Avatar, Button, ErrorText, Field, Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Role, User } from "@/lib/types";
 
@@ -32,7 +32,7 @@ export default function PeoplePage() {
     const data = Object.fromEntries(new FormData(form));
     try {
       await api("/users", { method: "POST", json: { ...data, username: String(data.username).trim().toLowerCase() } });
-      toast(`Added ${data.name}. They are now on the Switch person screen.`);
+      toast(`Added ${data.name}. They can now choose their name when opening ArGuide.`);
       form.reset();
       setError("");
       await load();
@@ -46,41 +46,35 @@ export default function PeoplePage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="text-2xl font-bold">People</h1>
-      <div className="mt-4 overflow-x-auto rounded-lg border border-rule bg-card">
-        <table className="w-full min-w-[36rem] text-left text-sm">
-          <thead className="border-b border-rule text-ink-soft">
-            <tr>
-              {["Name", "Username", "Role", "Access"].map((h) => <th key={h} scope="col" className="px-4 py-3 font-bold">{h}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-rule">
-            {people.map((u) => (
-              <tr key={u.id} className={u.active ? "" : "text-ink-soft"}>
-                <td className="px-4 py-3 font-bold">{u.name}</td>
-                <td className="px-4 py-3 font-mono">{u.username}</td>
-                <td className="px-4 py-3">
-                  <Select aria-label={`Role of ${u.name}`} value={u.role} disabled={u.id === me.id} onChange={(e) => change(u, { role: e.target.value as Role }, `${u.name} is now ${e.target.value}.`)} className="w-36">
-                    {ROLES.map(([r, label]) => <option key={r} value={r}>{label}</option>)}
-                  </Select>
-                </td>
-                <td className="px-4 py-3">
-                  {u.id === me.id ? "You" : (
-                    <Button onClick={() => change(u, { active: !u.active }, u.active ? `${u.name} can no longer use the app.` : `${u.name} can use the app again.`)}>
-                      {u.active ? "Remove access" : "Restore access"}
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {people.length > 0 && (
+        <ul className="mt-5 divide-y divide-rule rounded-xl border border-rule bg-card text-sm">
+          {people.map((u) => (
+            <li key={u.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_10rem_9rem]">
+              <div className={`col-span-2 flex min-w-0 items-center gap-3 sm:col-span-1 ${u.active ? "" : "text-ink-soft"}`}>
+                <Avatar name={u.name} />
+                <div className="min-w-0 wrap-anywhere">
+                  <p className="font-bold">{u.name}</p>
+                  <p className="text-ink-soft">{u.username}{u.id === me.id && " (you)"}</p>
+                </div>
+              </div>
+              <Select aria-label={`Role of ${u.name}`} value={u.role} disabled={u.id === me.id} onChange={(e) => change(u, { role: e.target.value as Role }, `${u.name} is now ${e.target.value}.`)}>
+                {ROLES.map(([r, label]) => <option key={r} value={r}>{label}</option>)}
+              </Select>
+              {u.id !== me.id && (
+                <Button onClick={() => change(u, { active: !u.active }, u.active ? `${u.name} can no longer use the app.` : `${u.name} can use the app again.`)}>
+                  {u.active ? "Remove access" : "Restore access"}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <form onSubmit={add} className="mt-10 max-w-xl space-y-4" aria-labelledby="add">
         <h2 id="add" className="text-lg font-bold">Add a person</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Full name"><Input name="name" required maxLength={120} /></Field>
-          <Field label="Username" hint="Lower-case letters, numbers, dot, dash."><Input name="username" required pattern="[a-zA-Z0-9._\-]{2,64}" autoCapitalize="none" /></Field>
+          <Field label="Username" hint="2–64 letters, numbers, dots, dashes or underscores."><Input name="username" required pattern="[a-zA-Z0-9._\-]{2,64}" autoCapitalize="none" /></Field>
           <Field label="Role">
             <Select name="role" defaultValue="technician">
               {ROLES.map(([r, label]) => <option key={r} value={r}>{label}</option>)}

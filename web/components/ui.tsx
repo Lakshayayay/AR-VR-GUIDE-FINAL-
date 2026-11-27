@@ -26,7 +26,7 @@ export function Button({ variant = "quiet", size = "md", className = "", ...prop
   );
 }
 
-const FIELD = "w-full min-h-10 rounded-md border border-rule bg-card px-3 text-base text-ink placeholder:text-ink-soft/70";
+const FIELD = "w-full min-h-10 rounded-md border border-rule bg-card px-3 text-base text-ink placeholder:text-ink-soft";
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -80,9 +80,36 @@ export function Dialog({ open, onClose, label, className = "", children }: {
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
+/** The ArGuide mark (the same drawing as app/icon.svg). */
+export function Mark({ className = "size-8" }: { className?: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-rule px-6 py-10 text-center">
+    <svg viewBox="0 0 32 32" aria-hidden className={className}>
+      <rect width="32" height="32" rx="7" fill="#18222b" stroke="#3a4a56" />
+      <path d="M8 22 16 9l8 13" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="16" cy="18" r="2.5" fill="#2aa7d8" />
+    </svg>
+  );
+}
+
+/** A person's initials in a circle. Decoration only: always show the name next to it. */
+export function Avatar({ name, dark, className = "size-10 text-sm" }: { name?: string; dark?: boolean; className?: string }) {
+  const words = (name ?? "").split(/\s+/).filter(Boolean);
+  const initials = words.length ? [words[0], ...words.slice(1).slice(-1)].map((w) => [...w][0]).join("").toUpperCase() : "?";
+  return (
+    <span aria-hidden className={`grid shrink-0 place-items-center rounded-full font-bold ${dark ? "bg-white/10 text-white" : "bg-blue/10 text-blue"} ${className}`}>
+      {initials}
+    </span>
+  );
+}
+
+export function Empty({ title, icon: Icon, children }: {
+  title: string;
+  icon?: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-dashed border-rule px-6 py-10 text-center">
+      {Icon && <Icon aria-hidden className="mx-auto mb-3 size-8 text-blue" />}
       <p className="font-bold">{title}</p>
       {children && <div className="mt-2 text-sm text-ink-soft">{children}</div>}
     </div>

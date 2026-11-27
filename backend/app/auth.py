@@ -5,8 +5,12 @@ Anyone who can reach the app can act as anyone, so keep it off the public intern
 Google sign-in will replace `find_person`; the role checks stay as they are.
 """
 
+import re
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from pydantic import BaseModel, StringConstraints
+from sqlalchemy import select, text
 
 from .db import SessionLocal, User, user_out
 
@@ -51,6 +55,32 @@ router = APIRouter(prefix="/api/auth")
 def people(db=Depends(get_db)):
     """The pick-a-person screen."""
     return [user_out(u) for u in db.scalars(select(User).where(User.active).order_by(User.id))]
+
+
+def username_from(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", ".", name.lower()).strip(".")[:64]
+    return slug if len(slug) >= 2 else "admin"
+
+
+class SetupIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
+@router.post("/setup")
+def setup(body: SetupIn, db=Depends(get_db)):
+    """First run only: whoever opens an empty ArGuide becomes its admin."""
+    # Hold the write lock from the empty check through the insert.
+    dialect = db.get_bind().dialect.name
+    if dialect == "sqlite":
+        db.execute(text("BEGIN IMMEDIATE"))
+    elif dialect == "postgresql":
+        db.execute(text("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"))
+    if db.scalar(select(User.id).limit(1)) is not None:
+        raise HTTPException(409, "ArGuide is already set up. Choose who you are.")
+    user = User(username=username_from(body.name), name=body.name, role="admin")
+    db.add(user)
+    db.commit()
+    return user_out(user)
 
 
 @router.get("/me")

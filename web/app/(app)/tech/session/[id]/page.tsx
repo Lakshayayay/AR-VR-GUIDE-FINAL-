@@ -21,7 +21,7 @@ const DONE_SHOW_MS = 4000; // a finished checklist shows this long, then shrinks
 export default function TechnicianCall() {
   const { id } = useParams<{ id: string }>();
   const call = useCall(Number(id), "technician");
-  const { socket, toast } = useApp();
+  const { socket, toast, notice: appNotice } = useApp();
   const router = useRouter();
   const now = useNow();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -214,8 +214,8 @@ export default function TechnicianCall() {
       {/* Top bar */}
       <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
         <div className="rounded-lg bg-hangar/85 px-3 py-2">
-          <p className="font-mono text-lg leading-none">{phase === "live" || phase === "connecting" ? clock(since(session?.startedAt, now)) : "--:--"}</p>
-          <p className="mt-1 text-sm text-dim">{session?.expert ? session.expert.name : session?.code}</p>
+          <p className="text-lg leading-none tabular-nums">{phase === "live" || phase === "connecting" ? clock(since(session?.startedAt, now)) : "--:--"}</p>
+          <p className={`mt-1 text-sm text-dim ${session?.expert ? "" : "font-mono"}`}>{session?.expert ? session.expert.name : session?.code}</p>
         </div>
         <div className="flex items-center gap-2">
           {call.recording === "on" && (
@@ -258,6 +258,7 @@ export default function TechnicianCall() {
         {eraseReady && <p className="rounded-lg bg-hangar/85 px-3 py-2">Rubbing out…</p>}
         {clearReady && <p className="rounded-lg bg-caution px-3 py-2 font-bold text-ink">Keep holding to clear all drawings…</p>}
         {notice && <p className="rounded-lg bg-hangar/85 px-3 py-2">{TRACKING_NOTICE[notice]}</p>}
+        {appNotice && <p className="pointer-events-none rounded-lg bg-panel px-3 py-2 text-sm">{appNotice}</p>}
       </div>
 
       {/* Bottom: step card, then controls */}
@@ -323,10 +324,10 @@ export default function TechnicianCall() {
             <>
               <p className="text-lg font-bold">Calling an expert…</p>
               <p className="mt-1 text-dim">
-                {session?.aircraft || "No aircraft given"}
+                {session?.aircraft ? <span className="font-mono">{session.aircraft}</span> : "No aircraft given"}
                 {session?.checklist && `, ${session.checklist.name}`}
               </p>
-              <p className="mt-3 font-mono text-dim" aria-live="off">
+              <p className="mt-3 text-dim tabular-nums" aria-live="off">
                 Ringing for up to {Math.max(0, Math.ceil(RING_SECONDS - (now - ringStart) / 1000))} s
               </p>
               <div className="mt-4 grid grid-cols-2 gap-3">

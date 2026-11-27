@@ -25,6 +25,10 @@ export function clock(seconds: number): string {
 const dateFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
 
+const todayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" });
+/** "Saturday 28 November" */
+export const today = (now: number) => todayFmt.format(now);
+
 export const day = (iso: string) => dateFmt.format(new Date(iso));
 export const time = (iso: string) => timeFmt.format(new Date(iso));
 export const dateTime = (iso: string) => `${day(iso)}, ${time(iso)}`;

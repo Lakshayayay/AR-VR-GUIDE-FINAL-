@@ -22,7 +22,7 @@ These rules apply to every agent and every session (Claude Code reads them throu
 - Follow the "Flight line" design: tokens in `web/app/globals.css`, rules in `STATUS.md` §5. Live-call screens dark, everything else light. Status colours only for status. Text contrast ≥ 4.5:1. Technician buttons ≥ 56 px with a label.
 - Keep dependencies few. Prefer native HTML and the standard library. Add a package only for a real need, and say why.
 - Before changing Next.js-specific code, read the bundled docs (`web/node_modules/next/dist/docs/`; see `web/AGENTS.md`).
-- `DEV_NO_LOGIN=true` is for local testing only. Never set it on a hosted site.
+- ArGuide has no sign-in. Run it locally or on a trusted private network. Keep it off the public internet.
 - Commit only when the owner asks. Never push without being asked. Never put secrets, passwords or personal details in docs or commits.
 - The owner is new to development. Explain in plain words, with short tables, and end replies that report work with a "What's next" section.
 
@@ -30,9 +30,9 @@ These rules apply to every agent and every session (Claude Code reads them throu
 
 ```bash
 npm test                                   # server tests (repo root)
-cd web && npm test                         # AR unit tests (tracker accuracy, hand gestures, drawing projection)
-cd web && npx tsc --noEmit && npx next build
-npm run e2e                                # needs both servers running and the e2e accounts (STATUS.md §3); the Python server in NORMAL login mode, not DEV_NO_LOGIN
+npm --prefix web test                      # AR unit tests (tracker accuracy, hand gestures, drawing projection)
+(cd web && npx tsc --noEmit && npx next build)
+npm run e2e                                # needs both servers and the two test people in a temporary DATA_DIR (README.md "Checks")
 E2E_CLIP=object E2E_FAKE_HAND=1 npm run e2e  # still camera, moving card; generated hand: rub, pinch line, thumbs-down clear (see README "Checks")
 ```
 Run the e2e against the production build and against `next dev`, and in Brave when behaviour differs between browsers (`CHROME_PATH`).
@@ -54,7 +54,7 @@ Leave the project so that the next session (or a different agent) can pick it up
 3. **Plans:** a new piece of work gets its plan in `docs/`. When the work is done, move the plan to `docs/history/` and leave it as it was (don't rewrite history); the current state lives in `STATUS.md`.
 4. **Update `README.md` and the `.env.example` files** if how to run, test or configure the app changed.
 5. **Update this file** if the owner gave a new standing rule.
-6. Check the docs contain no secrets, real passwords or personal details. The demo password `demo-pass-1` is fine; it's only for throwaway test accounts.
+6. Check the docs contain no secrets, real credentials or personal details.
 7. **Stop servers you started**, or note in `STATUS.md` that they are still running.
 8. **Ask the owner whether to commit.** If yes, commit everything on the current branch with a clear message. Don't push unless asked.
 9. Reply with a short summary of the session and a "What's next" section.
