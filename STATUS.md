@@ -1,6 +1,6 @@
 # ArGuide status
 
-**Last updated:** 2026-11-28 · **Branch:** `feature/ui-refresh` (UI changes in the working tree) · **Last commit:** `ad787d8` (hands-free clear and shrinking checklist card). Local `main` and `origin/main` are at `f70ef7e`. The merge of PR #1 is `4d31085`; the old prototype is the tag `pre-refactor` = `599369b`.
+**Last updated:** 2026-11-28 · **Branch:** `main` · **Last commit:** `1837b2b` (UI refresh merge, followed by this status update). The merge of PR #1 is `4d31085`. The tag `pre-refactor` (`599369b`) marks the old prototype.
 
 > **UI refresh and clean start (2026-11-28).** ArGuide creates a first admin on a fresh database and keeps three editable starter checklists. The Flight line refresh includes role-specific Home screens, desktop navigation and phone tabs, responsive records, a printable report and updated People and Checklist screens. Call notifications leave the call controls available. The previous local test database was removed (§3).
 
@@ -34,7 +34,7 @@ ArGuide is live remote help for aircraft maintenance. A technician points a phon
 | M5 P1 features | Done, except the QR code (a "Copy link" button exists) |
 | M6 speed, polish, release | **Partly done.** Single-origin configuration and relay credentials are prepared (`deploy/`, `docs/DEPLOYMENT.md`); a live relay, a hosted deployment, real-device and performance acceptance are unverified and not required now. See §8 |
 
-**Git:** the refurbished base is on `main` (PR #1, merge commit `4d31085`). `feature/ui-refresh` includes two later commits, `3f73379` (password removal) and `ad787d8` (hands-free clear and shrinking checklist card), plus working-tree changes for the refresh. Neither commit is in `origin/main`. The tag `pre-refactor` (`599369b`) marks the old prototype. Competitor screenshots (`docs/research/screenshots/*.png`) stay local because the repo is public.
+The refurbished base was merged in PR #1 (`4d31085`). The refresh is on `main` through [PR #2](https://github.com/Lakshayayay/AR-VR-GUIDE-FINAL-/pull/2), with merge commit `1837b2b`. Its three commits are `3f73379` (password removal), `ad787d8` (hands-free clear and shrinking checklist), and `5baf317` (first-run setup and UI). Both old Vercel projects skipped the PR builds. Competitor screenshots stay local because the repo is public.
 
 **Earlier improvement work:** delayed updates cannot recreate removed drawings. Tracking and hand recognition consume the same source image and placement; hand-covered areas are excluded from anchor features. Partial erasures are shared, deduplicated and undoable after rejoin. Analysis can fall from 640 to 480 pixels if tracking is slow. Photos and consented recordings use the composed picture. Generated-camera tests check rubbing through the live socket, saved AR evidence and distinct generated audio from each side. Real-hand recognition and real microphone audio remain unverified.
 
@@ -53,6 +53,8 @@ ArGuide is live remote help for aircraft maintenance. A technician points a phon
 ### Checks (2026-11-21, final tree before the merge; rows marked historical were not re-run)
 
 **UI refresh (2026-11-28):** 13 server tests, 58 web tests, TypeScript, and the default and webpack production builds passed. The ordinary call, generated-hand call, and moving-card call with generated hands passed in Chrome for Testing on both `next start` and `next dev`. During a parallel repeat, the production generated-hand case timed out waiting for a pinch to end, and the development moving-card case timed out waiting for the rubbing banner to clear. Both passed in isolated reruns. The cause was not confirmed.
+
+On Brave with `next dev`, the ordinary call and moving-card call with generated hands passed using default video connection settings. One earlier moving-card attempt with `ICE_SERVERS=[]` timed out waiting for video on the expert's side. The cause was not confirmed.
 
 The production browser review covered 35 screenshots at desktop and phone widths, starting from an empty database. It exercised first-admin setup, starter editing, adding and restoring a person, switching people, the call controls during notifications, report print styling, and mobile session search and navigation. Screenshots use generated camera video. The author reviewed the changes. No independent reviewer ran.
 
@@ -100,7 +102,7 @@ npm run dev:web                                      # Next.js on :3000
 
 **End-to-end test:** needs the people `ravi` (technician, "Ravi Kumar") and `mehta` (expert, "Dr. Mehta"). If Playwright's own browser isn't installed, run `npx playwright install chromium` or set `CHROME_PATH`. On the owner's Mac a cached Chromium exists at `~/Library/Caches/ms-playwright/chromium-1243/...`; Playwright 1.65 expects build 1255. **Browser and ports:** Playwright 1.65 expects Chromium build 1255, which is not installed here; set `CHROME_PATH` to the cached build `~/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` (Brave: `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`). For a production run: build with the test API's address (`BACKEND_URL=http://127.0.0.1:8001 npx next build --webpack`), start `npx next start -H 127.0.0.1 -p 3200`, then `BASE_URL=http://127.0.0.1:3200 npm run e2e`.
 
-**Servers:** none are left running by default. If port 3000 is used by another program (it was, on the owner's Mac: a portfolio site), run the screens on another port, for example `cd web && npx next dev -p 3100`, and give the e2e `BASE_URL`. The newest session-log row says which review servers were left running. Data for review or tests lives in a throwaway folder (`DATA_DIR`), not in the project's `backend/data`, and is not kept.
+The refresh's test servers on 8001, 8002, 3200 and 3201 were stopped. Browser test databases and generated video clips were removed. Screenshots are outside the repository. If another app uses port 3000, run `cd web && npx next dev -p 3100` and set the test's `BASE_URL` to that address.
 
 ## 4. Map of the code
 
@@ -225,11 +227,11 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 
 ## 8. Next steps (in order)
 
-**Current phase:** the owner asked to wrap up ArGuide with the UI refresh, clean start, and merge into `main`. The owner approved the plan and asked to finish it. Real Android and iPhone calls, real hands in other rooms, a hosted site, a relay on a real host and real-device performance remain unverified.
+The approved UI refresh and clean start are complete and merged into `main`. Real Android and iPhone calls, real hands in other rooms, a hosted site, a relay on a real host and real-device performance remain unverified.
 
 **Real-webcam check:** the thumbs-down and shrinking checklist still need a real-webcam try.
 
-**Release:** the refresh is implemented and checked. The plan is archived in [`docs/history/UI_REFRESH_PLAN.md`](docs/history/UI_REFRESH_PLAN.md). The pull request and post-merge handoff are pending.
+The finished plan is in [`docs/history/UI_REFRESH_PLAN.md`](docs/history/UI_REFRESH_PLAN.md). A fresh local run opens the first-admin setup. Run the app only on a trusted private network until sign-in is added.
 
 **Later, in order:**
 1. Define the full-stack product layer with the owner. The owner's description was product management for training and factory services as software. The users, first job, and existing workflow are still open. Write the plan in `docs/` and get approval before building.
@@ -243,6 +245,7 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 
 | Date | What happened |
 |---|---|
+| 2026-11-28 (UI refresh merge) | Merged PR #2 into `main` as `1837b2b`, preserving the password removal, hands-free changes and UI refresh as separate commits. Verified both old Vercel projects skipped the PR builds. Brave results are in §2. The temporary review and test servers were stopped, and browser test databases and clips were removed. The next local run starts at first-admin setup. |
 | 2026-11-28 (UI refresh verification) | Finished first-admin setup and the Flight line refresh. Confirmed that simultaneous setup requests create one admin, removed the local test database after checking its contents, and updated the run and private-network instructions. Unit checks, types, both builds, two-browser checks and the responsive review are recorded in §2. The real-webcam check remains open. |
 | 2026-11-28 (UI refresh approval) | The owner approved the plan and asked to implement it. |
 | 2026-11-28 (UI refresh handoff) | Verified `feature/ui-refresh` at `ad787d8` with working-tree changes for first-admin setup, navigation, the start screen, and both Home screens. Local `main` and `origin/main` are at `f70ef7e`. Recorded the owner's three choices and the pending plan approval. The handoff reports 12 server and 58 web tests passed and types clean. Builds, two-browser calls, and visual checks for the refresh are pending. No servers started or data reset during the handoff. |
