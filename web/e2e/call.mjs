@@ -1,7 +1,7 @@
 // End-to-end check of a whole call, in two browsers with fake cameras.
 //
-// Needs both servers running (see README) and three accounts:
-//   technician "ravi", expert "mehta" (Dr. Mehta), both with password E2E_PASSWORD.
+// Needs both servers running (see README) and two people:
+//   technician "ravi" (Ravi Kumar), expert "mehta" (Dr. Mehta).
 // Run: npm run e2e        Screenshots go to SHOTS_DIR (default: ./test-results).
 // If Playwright's own browser is not installed: npx playwright install chromium (or set CHROME_PATH).
 
@@ -14,8 +14,8 @@ import ts from "typescript";
 import { makeClip, makeObjectClip } from "./make-clip.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:3000";
-const PASSWORD = process.env.E2E_PASSWORD ?? "demo-pass-1";
 const SHOTS = process.env.SHOTS_DIR ?? "test-results";
+const NAMES = { mehta: /Dr\. Mehta/, ravi: /Ravi Kumar/ };
 const FAKE_HAND = process.env.E2E_FAKE_HAND === "1";
 mkdirSync(SHOTS, { recursive: true });
 // The technician's camera plays a textured panel with a blue dot (see make-clip.mjs): by default the camera
@@ -35,7 +35,7 @@ const browser = await chromium.launch({
 });
 const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
-async function signIn(context, username) {
+async function openAs(context, username) {
   await context.grantPermissions(["camera", "microphone"], { origin: BASE });
   await context.addInitScript((frequency) => {
     const getMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -109,9 +109,7 @@ async function signIn(context, username) {
   page.on("requestfinished", (r) => !r.url().startsWith(BASE) && /^https?:/.test(r.url()) && outside.push(r.url()));
   pages.push(page);
   await page.goto(`${BASE}/login`, { waitUntil: "networkidle" }); // let the page's script load first
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: NAMES[username] }).click();
   return page;
 }
 
@@ -121,7 +119,7 @@ const outside = [];
 const pageErrors = [];
 
 try {
-  const expert = await signIn(await browser.newContext({ viewport: { width: 1440, height: 900 } }), "mehta");
+  const expert = await openAs(await browser.newContext({ viewport: { width: 1440, height: 900 } }), "mehta");
   await expert.waitForURL("**/expert");
   await expert.getByText("No one is waiting").waitFor();
   // Exercise the production drawing renderer on real canvas pixels, including overlapping cutouts.
@@ -176,7 +174,7 @@ try {
       };
     }, handChunks);
   }
-  const tech = await signIn(techContext, "ravi");
+  const tech = await openAs(techContext, "ravi");
   await tech.waitForURL("**/tech");
   await tech.getByLabel("Aircraft").fill("VT-ABC");
   await tech.getByLabel("Checklist").selectOption({ label: "Engine assembly check" });

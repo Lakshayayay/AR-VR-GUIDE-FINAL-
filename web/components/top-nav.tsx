@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { api } from "@/lib/api";
+import { choosePerson } from "@/lib/api";
 import { isExpert, useApp } from "./app-provider";
 
 export function TopNav() {
@@ -15,8 +15,8 @@ export function TopNav() {
     ...(me.role === "admin" ? [{ href: "/admin/users", label: "People" }] : []),
   ];
 
-  const signOut = async () => {
-    await api("/auth/logout", { method: "POST" }).catch(() => {});
+  const switchPerson = () => {
+    choosePerson(null);
     window.location.assign("/login");
   };
 
@@ -62,8 +62,8 @@ export function TopNav() {
             </label>
           )}
           <span className="hidden text-sm text-dim sm:inline">{me.name}</span>
-          <button onClick={signOut} className="rounded-md px-2 py-2 text-sm text-dim hover:text-white">
-            Sign out
+          <button onClick={switchPerson} className="rounded-md px-2 py-2 text-sm text-dim hover:text-white">
+            Switch person
           </button>
         </div>
       </nav>

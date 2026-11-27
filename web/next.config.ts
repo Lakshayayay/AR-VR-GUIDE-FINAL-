@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 // The Python server. The browser only ever talks to this Next.js app, which passes
-// /api and /socket.io requests through, so the sign-in cookie stays first-party.
+// /api and /socket.io requests through, so the app has one address.
 const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
 // Closed-network guard: the browser may only send data to this site (and to the live-connection

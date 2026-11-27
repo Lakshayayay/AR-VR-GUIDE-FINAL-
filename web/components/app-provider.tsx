@@ -4,7 +4,7 @@ import { PhoneIncoming } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import { api, rememberDevUser } from "@/lib/api";
+import { api, person, personFromAddress } from "@/lib/api";
 import { ringOnce, unlockAudio } from "@/lib/ring";
 import type { Session, User } from "@/lib/types";
 import { Button, Dialog } from "./ui";
@@ -45,16 +45,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    rememberDevUser(); // ?as=<username>, local testing only
-    api<User>("/auth/me").then(setMe, () => {}); // not signed in: api() sends the browser to /login
+    personFromAddress();
+    api<User>("/auth/me").then(setMe, () => {}); // nobody chosen: api() sends the browser to /login
   }, []);
 
   useEffect(() => {
     if (!me) return;
     const s = io(process.env.NEXT_PUBLIC_SOCKET_URL || undefined, {
-      auth: (cb) => {
-        api<{ token: string }>("/auth/socket-token").then((r) => cb({ token: r.token }), () => cb({}));
-      },
+      auth: { user: person() },
     });
     s.on("connect", () => setOnline(true));
     s.on("disconnect", () => setOnline(false));

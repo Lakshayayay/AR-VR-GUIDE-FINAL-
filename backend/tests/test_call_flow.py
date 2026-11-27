@@ -17,18 +17,15 @@ import pytest  # noqa: E402
 import socketio  # noqa: E402
 import uvicorn  # noqa: E402
 
-from app.auth import hash_password  # noqa: E402
 from app.db import SessionLocal, User  # noqa: E402
 from app.main import app  # noqa: E402
-
-PASSWORD = "test-password"
 
 
 @pytest.fixture(scope="module")
 def base_url():
     with SessionLocal() as db:
         for username, role in [("tech", "technician"), ("tech2", "technician"), ("expert", "expert"), ("admin", "admin")]:
-            db.add(User(username=username, name=username.title(), role=role, password_hash=hash_password(PASSWORD)))
+            db.add(User(username=username, name=username.title(), role=role))
         db.commit()
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -43,25 +40,23 @@ def base_url():
     thread.join(5)
 
 
-def signed_in(base_url, username) -> httpx.Client:
-    client = httpx.Client(base_url=base_url)
-    assert client.post("/api/auth/login", json={"username": username, "password": PASSWORD}).status_code == 200
-    return client
+def acting_as(base_url, username) -> httpx.Client:
+    return httpx.Client(base_url=base_url, headers={"x-arguide-user": username})
 
 
 class Person:
     """A live connection that remembers every event it receives."""
 
     def __init__(self, base_url, username):
-        self.http = signed_in(base_url, username)
+        self.username = username
+        self.http = acting_as(base_url, username)
         self.base_url = base_url
         self.sio = socketio.AsyncClient()
         self.got: list[tuple[str, object]] = []
         self.sio.on("*", lambda event, data=None: self.got.append((event, data)))
 
     async def connect(self):
-        token = self.http.get("/api/auth/socket-token").json()["token"]
-        await self.sio.connect(self.base_url, auth={"token": token}, transports=["websocket"])
+        await self.sio.connect(self.base_url, auth={"user": self.username}, transports=["websocket"])
 
     async def wait_for(self, event, timeout=3.0):
         end = time.monotonic() + timeout
@@ -77,21 +72,24 @@ class Person:
         return any(name == event for name, _ in self.got)
 
 
-def test_sign_in_rules(base_url):
-    client = httpx.Client(base_url=base_url)
-    assert client.post("/api/auth/login", json={"username": "tech", "password": "wrong-one"}).status_code == 401
-    assert client.get("/api/auth/me").status_code == 401
-    tech = signed_in(base_url, "tech")
-    assert tech.get("/api/auth/me").json()["role"] == "technician"
+def test_person_and_role_rules(base_url):
+    nobody = httpx.Client(base_url=base_url)
+    assert nobody.get("/api/auth/me").status_code == 401
+    assert acting_as(base_url, "no-such-person").get("/api/auth/me").status_code == 401
+    assert nobody.get("/api/auth/me", params={"user": "tech"}).json()["role"] == "technician"
+    assert nobody.post("/api/checklists", params={"user": "expert"}, json={}).status_code != 200
+    assert nobody.post("/api/users", params={"user": "admin"}, json={"username": "xx", "name": "X", "role": "admin"}).status_code == 401
+    assert {p["username"] for p in nobody.get("/api/auth/people").json()} >= {"tech", "expert", "admin"}
+    tech = acting_as(base_url, "tech")
     assert tech.get("/api/users").status_code == 403
-    assert signed_in(base_url, "admin").get("/api/users").status_code == 200
+    assert acting_as(base_url, "admin").get("/api/users").status_code == 200
 
 
-def test_live_connection_needs_sign_in(base_url):
+def test_live_connection_needs_a_known_person(base_url):
     async def run():
         client = socketio.AsyncClient()
         with pytest.raises(socketio.exceptions.ConnectionError):
-            await client.connect(base_url, auth={"token": "made-up"}, transports=["websocket"])
+            await client.connect(base_url, auth={"user": "made-up"}, transports=["websocket"])
     asyncio.run(run())
 
 
@@ -280,6 +278,8 @@ async def _whole_call(base_url):
                              files={"file": ("frame.jpg", b"\xff\xd8\xff fake jpeg", "image/jpeg")})
     assert photo.status_code == 200
     assert tech.http.get(f"/api/files/{photo.json()['id']}").content.startswith(b"\xff\xd8")
+    in_address = httpx.get(f"{base_url}/api/files/{photo.json()['id']}", params={"user": "tech"})  # how <img> asks
+    assert in_address.content.startswith(b"\xff\xd8")
     assert expert.http.post(f"/api/sessions/{sid}/files", data={"kind": "photo"},
                             files={"file": ("x.exe", b"MZ", "application/octet-stream")}).status_code == 400
 

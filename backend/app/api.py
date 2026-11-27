@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import aliased
 
-from .auth import current_user, get_db, hash_password, require_role
+from .auth import current_user, get_db, require_role
 from .config import ICE_SERVERS, TURN_SHARED_SECRET, TURN_TTL_SECONDS, TURN_URLS, UPLOAD_DIR
 from .turn import turn_credentials
 from .db import (
@@ -78,14 +78,12 @@ class UserIn(BaseModel):
     username: str = Field(pattern=r"^[a-z0-9._-]{2,64}$")
     name: str = Field(min_length=1, max_length=120)
     role: Role
-    password: str = Field(min_length=8, max_length=200)
 
 
 class UserPatch(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     role: Role | None = None
     active: bool | None = None
-    password: str | None = Field(None, min_length=8, max_length=200)
 
 
 @router.get("/users")
@@ -97,7 +95,7 @@ def list_users(user: User = Depends(admin_only), db=Depends(get_db)):
 def create_user(body: UserIn, user: User = Depends(admin_only), db=Depends(get_db)):
     if db.scalar(select(User).where(User.username == body.username)):
         raise HTTPException(409, "That username is taken. Choose another.")
-    u = User(username=body.username, name=body.name, role=body.role, password_hash=hash_password(body.password))
+    u = User(username=body.username, name=body.name, role=body.role)
     db.add(u)
     db.commit()
     return user_out(u)
@@ -111,8 +109,6 @@ def update_user(user_id: int, body: UserPatch, user: User = Depends(admin_only),
     for key in ("name", "role", "active"):
         if (value := getattr(body, key)) is not None:
             setattr(u, key, value)
-    if body.password:
-        u.password_hash = hash_password(body.password)
     db.commit()
     return user_out(u)
 

@@ -1,6 +1,8 @@
 # ArGuide status
 
-**Last updated:** 2026-11-21 · **Branch:** `main` · **Last commit:** `4d31085` (merge of PR #1; the old prototype is the tag `pre-refactor` = `599369b`)
+**Last updated:** 2026-11-28 · **Branch:** `change/remove-passwords` (changes not committed) · **Last commit:** `f70ef7e` (the merge of PR #1 is `4d31085`; the old prototype is the tag `pre-refactor` = `599369b`)
+
+> **Sign-in is removed for now (uncommitted, found 2026-11-28).** No passwords, cookie, tokens or `DEV_NO_LOGIN` mode. `/login` is a "Who are you?" list; a tab can also be opened with `?as=<username>`. The server believes whoever the app says it is, so **keep it off the public internet**. Code comments say Google sign-in will replace this. Server tests 10/10, web tests 53/53 and types pass (2026-11-28); the e2e and production build were not re-run. `README.md`, `AGENTS.md`, `backend/.env.example` and `docs/DEPLOYMENT.md` still describe passwords.
 
 > **Where things stand (2026-11-21).** The owner tried the app on their computer after the dark-room fixes, said everything works fine, and accepted it as the base to build on. The branch was cleaned up (old prototype removed, plans moved to `docs/history/`, commits grouped by topic) and merged into `main`. All automated checks pass (§2). Still unverified, and not required for acceptance: real phones, a hosted site, a relay on a real host, real microphone audio, and real hands in more than one room. **Next phase: a full-stack product layer** on top of the AR core, which stays as it is (OpenCV.js and MediaPipe). The owner described it as product management for training and factory services as software; it still has to be defined with them (§8).
 
@@ -36,7 +38,7 @@ ArGuide is live remote help for aircraft maintenance. A technician points a phon
 
 | Area | Feature |
 |---|---|
-| Accounts | Sign-in (cookie), three roles: technician, expert, admin. Admin adds people, changes roles, removes access, resets passwords |
+| Accounts | No sign-in for now: pick a person. Three roles: technician, expert, admin. Admin adds people, changes roles, removes access |
 | Calling | Technician starts a call (aircraft + optional checklist). Experts who are marked "Available" get a ringing dialog. Only one expert can answer. An unanswered call becomes "missed" after 45 s on the phone (server also expires after 60 s). Technician can copy a link for an expert |
 | Live call | Video and voice (technician sends video and audio, expert sends audio). Drawing: arrow, circle, box, pen, text, 4 expert colours. The technician draws in green. Undo (own shapes), clear all, pointer, freeze/resume, mute, sound, camera flip, torch (where supported), screen kept awake. Connection bars and the expert's numbers are measured (delay, frames, size, speed, loss) |
 | Work | Checklist step by step (technician) or full list (expert), "problem" needs a note, expert sign-off when every step has a result, inspector-style **SIGNED OFF stamp** on both sides. Chat, notes, photos (video frame plus drawings), recording only after the technician allows it |
@@ -81,18 +83,11 @@ npm run dev:api                                      # Python on :8000 (data in 
 npm run dev:web                                      # Next.js on :3000
 ```
 
-**Test mode without sign-in** (for trying a call quickly; the owner found login confusing while reviewing):
-
-```bash
-cd backend && DEV_NO_LOGIN=true uv run uvicorn app.main:app --port 8000
-# then open two tabs:  http://localhost:3000/expert?as=<expert username>   and   http://localhost:3000/tech?as=<technician username>
-```
-
-The tab remembers who it is (sessionStorage), so two tabs in one browser can be two people. Requests without `?as=` act as the first expert. This mode is refused when `COOKIE_SECURE=true`. Never enable it on a hosted site.
+**Choosing a person** (no passwords): open http://localhost:3000 and pick one, or open two tabs: `http://localhost:3000/expert?as=<expert username>` and `http://localhost:3000/tech?as=<technician username>`. The tab remembers who it is (sessionStorage), so two tabs in one browser can be two people. A database made before the password removal still requires a password column: use a fresh `DATA_DIR`.
 
 **Phone on the same Wi-Fi:** `cd web && npm run dev:phone` (https, self-signed; the camera needs https).
 
-**End-to-end test:** the Python server must run in **normal** login mode: with `DEV_NO_LOGIN=true` every request acts as the first expert, so the test's "technician" becomes the expert and nothing works. Needs accounts `ravi` (technician, "Ravi Kumar") and `mehta` (expert, "Dr. Mehta") with password `demo-pass-1`. If Playwright's own browser isn't installed, run `npx playwright install chromium` or set `CHROME_PATH`. On the owner's Mac a cached Chromium exists at `~/Library/Caches/ms-playwright/chromium-1243/...`; Playwright 1.65 expects build 1255. **Browser and ports:** Playwright 1.65 expects Chromium build 1255, which is not installed here; set `CHROME_PATH` to the cached build `~/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` (Brave: `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`). For a production run: build with the test API's address (`BACKEND_URL=http://127.0.0.1:8001 npx next build --webpack`), start `npx next start -H 127.0.0.1 -p 3200`, then `BASE_URL=http://127.0.0.1:3200 npm run e2e`.
+**End-to-end test:** needs the people `ravi` (technician, "Ravi Kumar") and `mehta` (expert, "Dr. Mehta"). If Playwright's own browser isn't installed, run `npx playwright install chromium` or set `CHROME_PATH`. On the owner's Mac a cached Chromium exists at `~/Library/Caches/ms-playwright/chromium-1243/...`; Playwright 1.65 expects build 1255. **Browser and ports:** Playwright 1.65 expects Chromium build 1255, which is not installed here; set `CHROME_PATH` to the cached build `~/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` (Brave: `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`). For a production run: build with the test API's address (`BACKEND_URL=http://127.0.0.1:8001 npx next build --webpack`), start `npx next start -H 127.0.0.1 -p 3200`, then `BASE_URL=http://127.0.0.1:3200 npm run e2e`.
 
 **Servers:** none are left running by default. If port 3000 is used by another program (it was, on the owner's Mac: a portfolio site), run the screens on another port, for example `cd web && npx next dev -p 3100`, and give the e2e `BASE_URL`. The newest session-log row says which review servers were left running. Data for review or tests lives in a throwaway folder (`DATA_DIR`), not in the project's `backend/data`, and is not kept.
 
@@ -103,12 +98,12 @@ The tab remembers who it is (sessionStorage), so two tabs in one browser can be 
 | `backend/app/main.py` | Starts FastAPI and Socket.IO together. On start, watches calls still marked active |
 | `backend/app/config.py` | All settings from environment variables (see `backend/.env.example`). Generates `data/secret.key` if `SECRET_KEY` is unset |
 | `backend/app/db.py` | SQLAlchemy tables, JSON shapes sent to the browser, the 3 seed checklists, `init_db()` (create_all, no migrations yet) |
-| `backend/app/auth.py` | argon2 passwords, JWT cookie `arguide_session` (12 h), short socket token (2 min), role checks, login throttle (5 tries a minute), `DEV_NO_LOGIN` bypass |
+| `backend/app/auth.py` | Who is asking (header `x-arguide-user`, or `?user=` on GET) and role checks. No sign-in |
 | `backend/app/api.py` | REST: checklists, people, sessions, file upload/download, stats, ICE config |
 | `backend/app/realtime.py` | Live connection: call life cycle, relays, checklist, sign-off, chat, abandoned-call timer |
 | `backend/app/cli.py` | `create-user` command |
 | `backend/tests/test_call_flow.py` | Starts a real server; runs whole calls with 3 to 4 people |
-| `web/app/(auth)/login` | Sign-in page |
+| `web/app/(auth)/login` | "Who are you?" pick-a-person page |
 | `web/app/(app)/layout.tsx` → `components/app-provider.tsx` | Loads the signed-in user, opens the live connection, expert availability, incoming-call dialog and ring, toasts |
 | `web/app/(app)/(nav)/…` | Pages with the top bar: `tech`, `expert`, `expert/session/[id]` (console), `sessions`, `sessions/[id]` (report), `checklists`, `admin/users` |
 | `web/app/(app)/tech/session/[id]` | Technician's full-screen phone call (no top bar) |
@@ -122,12 +117,12 @@ The tab remembers who it is (sessionStorage), so two tabs in one browser can be 
 | `web/scripts/copy-vendor.mjs` → `web/public/vendor/` | Copies OpenCV.js and MediaPipe's runtime into the site on `npm install` (git-ignored). The hand model `public/vendor/mediapipe/gesture_recognizer.task` (8.4 MB, Apache-2.0) is kept in git |
 | `web/components/work.tsx` | Stamp, checklist panel, step card, chat/notes, photos and recordings |
 | `web/components/ui.tsx`, `top-nav.tsx` | Buttons, fields, native `<dialog>`; top bar |
-| `web/lib/` | `api.ts` (fetch + errors + test-mode header), `webrtc.ts` (peer + quality), `annotations.ts` (shapes, drawing, photo capture), `format.ts`, `ring.ts` (ringtone made with Web Audio), `types.ts` |
+| `web/lib/` | `api.ts` (fetch + errors + chosen person), `webrtc.ts` (peer + quality), `annotations.ts` (shapes, drawing, photo capture), `format.ts`, `ring.ts` (ringtone made with Web Audio), `types.ts` |
 | `web/e2e/call.mjs`, `make-clip.mjs` | Two-browser end-to-end test; makes the two test clips used as the technician's camera: a moving camera over a still panel, or (`E2E_CLIP=object`) a still camera with a small card moving |
 | `web/AGENTS.md` | Written by Next.js itself: read the bundled Next 16 docs before changing Next-specific code |
 | `docs/history/`, `deploy/` | Finished plans (refurbish, AR core, review round) and the example Caddy, systemd and coturn files for the pilot deployment (`docs/DEPLOYMENT.md`) |
 
-### Live messages (Socket.IO, all need a signed-in socket token)
+### Live messages (Socket.IO, the connection names a known person)
 
 | From | Event | Purpose |
 |---|---|---|
@@ -143,7 +138,7 @@ The tab remembers who it is (sessionStorage), so two tabs in one browser can be 
 | Expert | `signoff` → ack | Saved; room gets `signoff:update` |
 | Both | `record:request` → `record:answer {allowed}` → `record:state {on}` | Consent before recording |
 
-REST endpoints (all under `/api`, docs at `/api/docs` while running): `auth/login|logout|me|socket-token`, `config`, `checklists` (GET/POST/PUT), `users` (admin), `sessions` (list with `q`, `status`, `days`), `sessions/{id}`, `sessions/{id}/files` (photo/recording upload), `files/{event_id}`, `stats`.
+REST endpoints (all under `/api`, docs at `/api/docs` while running): `auth/people|me`, `config`, `checklists` (GET/POST/PUT), `users` (admin), `sessions` (list with `q`, `status`, `days`), `sessions/{id}`, `sessions/{id}/files` (photo/recording upload), `files/{event_id}`, `stats`.
 
 Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_events` (chat, note, photo, recording), `step_results`, `checklists`.
 
@@ -181,7 +176,6 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 - **MediaPipe sends usage logs to Google** (`odml.pa.googleapis.com`) and has no switch. The `connect-src` policy makes the browser refuse it (also inside workers: their scripts get the same header).
 - **AR tests with a moving picture:** after Resume, the canvas still shows the frozen picture for a moment, so "box is on the dot" can be trivially true; the e2e test waits until the dot has moved.
 - **Node 24 runs `.ts` tests directly** (`node --test`); imports in those tests end in `.ts`, which needs `allowImportingTsExtensions` in `tsconfig.json`.
-- **The e2e needs the Python server in normal login mode.** With `DEV_NO_LOGIN=true` the sign-in cookie is ignored and everyone is the first expert; the test then fails at the technician's "Call an expert" with no useful message (the failure screenshot shows "Hello, Dr." on the technician page).
 - **Followed points can agree and still be wrong.** Optical flow reports "found" for points that never moved, and the forward-backward check cannot catch that. The tracker confidently locked onto the still background after a small object jumped. Every placement is now compared with the live picture (normalised correlation over the drawing's own area, `MIN_SIMILARITY`); a poor match counts as lost.
 - **A small drawing area has too few corners.** The drawing's own area is widened step by step (`FOCUS_WIDEN`) until it has `FOCUS_MIN_CORNERS` points; jumping straight to the whole anchor area (mostly background) defeated the purpose. Keep `FOCUS_MARGIN` small: 4% follows a moving card, 20% does not.
 - **Tests that must tell old from new:** first make a version that fails (the generated card was bigger than the anchor area, so the old tracker passed too; the card is now smaller than the anchor area).
@@ -199,7 +193,8 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 
 | Shortcut | Limit | Upgrade |
 |---|---|---|
-| Live rooms, login throttle and drawings kept in memory in one process | One server process; drawings lost on restart | Redis + `socketio.AsyncRedisManager` |
+| No sign-in: anyone who can reach the app can act as anyone | Local use only | Google sign-in replaces `find_person` in `auth.py` |
+| Live rooms and drawings kept in memory in one process | One server process; drawings lost on restart | Redis + `socketio.AsyncRedisManager` |
 | `create_all`, no migrations | Changing a table breaks existing databases | Add Alembic before the first change on real data |
 | Sync SQLAlchemy inside async socket handlers | Fine for one site's traffic | Async engine if calls queue up |
 | Uploads go through the Next.js rewrite to local disk (`backend/data/uploads`) | Long recordings are large; free hosts wipe disks | Object storage, or upload straight to Python |
@@ -223,6 +218,8 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 1. **Say what the product layer is.** The owner's words: product management for training and factory services as software. Not yet defined (who uses it, which screens, which data, what it replaces). The next session should interview the owner one decision at a time and write a plan in `docs/` before building anything.
 2. If a Render service for the old Node server auto-deploys from `main`, its next deploy will fail because the folder is gone. Suspend it in the Render dashboard (it was not touched from here).
 
+**Start here next session (suggested opener, change freely):** read this file, then interview the owner about the product layer: one decision at a time, plain words, with a recommendation each (`AskUserQuestion`). Suggested order: (1) who uses it first: trainees and instructors (training), factory-floor staff (factory services), or managers; (2) the first job it must do (for example schedule and track training, log service requests, assign experts, keep records); (3) what it replaces today (spreadsheets, paper) and what data already exists; (4) one app with the AR call inside it, or separate screens that link to the call; (5) closed network or internet, and how many sites; (6) whether it is for the HAL challenge (unconfirmed, §1) or for other customers. Then write the plan in `docs/`, get the owner's approval, build on a branch, and open a PR (`AGENTS.md`).
+
 **Next, in order:**
 1. Plan the full-stack layer with the owner (above). New plan goes in `docs/`; when the work is done it moves to `docs/history/`.
 2. Add Alembic (migrations) before the first change to any table (§7).
@@ -235,6 +232,7 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 
 | Date | What happened |
 |---|---|
+| 2026-11-28 | Owner asked for a local development server. Found uncommitted password removal on `change/remove-passwords` and recorded it here. Server tests 10/10, web tests 53/53, types clean. Ran `npm run dev:api` on `127.0.0.1:8000` and `npm run dev:web` on `127.0.0.1:3000` (port 3000 was free); they were stopped later that day and **started again for the owner to inspect (now running; they may stop when the session ends)**. New local database in `backend/data` (git-ignored, kept on this computer) with demo people `ravi`, `mehta`, `asha`. The login, expert and technician pages loaded in headless Chromium with no console errors; no call was run. No commit or push. |
 | 2026-11-21 (merge) | Owner tried the app after the dark-room fixes, said everything works, accepted it as the base to build on, and asked to merge, clean up and then build a full-stack product layer. Decisions: delete the old prototype `ArGuide/` now (its old Gemini key file was moved to the owner's home folder, outside the repo); move finished plans to `docs/history/`; delete merged branches; OpenCV and MediaPipe stay; merge through a pull request with a merge commit. Done: the two old Vercel projects were set to skip builds (Ignored Build Step `exit 0`; the sites keep their last version; the PR showed "Canceled by Ignored Build Step"); the uncommitted work was saved as topic commits (the AR library and the call screens had to be one commit because `capture()` changed shape; AR commit alone: types clean, 53/53 tests; backend commit alone: 10/10); `ArGuide/` removed; docs moved, README, AGENTS and STATUS refreshed. **Found by the e2e and fixed:** once in 7 runs a 0-byte recording was saved when the technician ended the call during recording; nothing empty is saved now (cause of the empty capture not reproduced). Final checks (§2) all pass, 10 e2e runs after the fix without a failure. PR #1 merged (merge commit `4d31085`); `features`, `ai-copilot` and the refurbish branch deleted (tag `pre-refactor` kept; `ai-copilot` was `8df16d0`). The external drive disconnected briefly mid-session and stopped the servers; the repo was checked (`git fsck`, all files present). Not verified: real phones and hands, hosting. **Servers left running for review** (they may stop when the session ends): Python on `127.0.0.1:8000` with `DEV_NO_LOGIN=true` and throwaway data from an earlier session's scratchpad (`.../ce816f01-.../scratchpad/arguide-data`, holds the owner's earlier test call; accounts `ravi` technician, `mehta` expert, `asha` admin, password `demo-pass-1`), and `next dev` on `127.0.0.1:3100` (port 3000 is used by the owner's portfolio site). Links: `http://127.0.0.1:3100/tech?as=ravi` and `http://127.0.0.1:3100/expert?as=mehta`. Test servers and test data from the checks were stopped and deleted. |
 | 2026-11-21 (later) | Owner sent a real screenshot from their session: mostly **dashed** green strokes, one solid line, no rubbing, and said the dashed vs solid lines were unexplained and the AR was confusing. Analysed the real frame (it is dark: average grey 31 of 255): the tracker found 1 to 20 points per drawing because its fixed corner cut-off (0.002) is above the real edges of a dark room (up to 0.0019) while the camera noise is far below it (0.00002); my new picture check was ruled out (same result with it off). Fixes, each test-first: the cut-off follows brightness and noise (lit pictures keep the old value; an always-adaptive version made the lit e2e clips flaky and was replaced); a drawing with nothing to hold on to is "fixed" (solid, where drawn) instead of dashed; plain-words messages on both screens; the Hands button names what is seen; open hand also recognised from finger joints; server validates `focus`. On the real frame: big loop 20 → 88 points, left loop 1 → 71; bare wall areas still too plain (now flagged). Tests at the end: web 53/53, TypeScript clean, server 10/10 (unchanged). e2e after the batch: `next dev` Chromium standard clip 4/4 (+1 call-connection flake), moving card 3/3; Brave standard clip passed; Brave moving-card + synthetic hand failed once late in the run and its rerun was cut short at the owner's request, so unresolved. Builds and the production-build e2e not re-run after this batch. Stopped at the owner's request to write this status; servers restored to the no-login review setup (the dev server had been stopped by the interruption). Not verified: anything with the owner's own hands or webcam after these changes. No commit, push or merge. |
 | 2026-11-21 | Owner reported (Brave, laptop webcam, no-login mode): pinch lines dotted and inaccurate, no rubbing, drawings not sticking when an object moves, expert drawings not reaching the technician; asked for the old plans to be reviewed and one phased plan written. Wrote `docs/history/PLAN.md`, banners on the two older plans, deleted the stray `.playwright-mcp/`. **Phase 1:** `?debug=ar` panel and live numbers; the e2e now checks the expert's arrow reaches the technician (14 to 54 ms, solid for 3 s) and passes on the webpack build, `next dev` and Brave, normal and synthetic-hand, so that symptom does not reproduce with generated clips (cause open). Found that the e2e must not run against `DEV_NO_LOGIN`. **Phase 3:** open palm rubs at once; gestures count pictures (one missed or misread picture cannot break a line at slow hand rates); hand recogniser runs beside the tracker and drops late results; smooth pen curves; a stroke being drawn is never dashed; e2e adds a synthetic pinch line (one line, 30 to 48 points). Skipped, with reasons: GPU delegate (hands already 24 to 31/s) and pointer throttle (at most about 30/s). **Phase 4:** the tracker follows an object that moves while the camera is still (drawing's own area first; failing test first: 51 px off, now 2 px); found and fixed that the tracker could lock confidently onto the still background after a small object jumped (photometric check of every placement; area widened step by step); 0.5 s solid hold after a loss; analysis size ladder 480/640/960; server validates the new `focus` box; second generated clip (`E2E_CLIP=object`). Results: web tests 46/46, server tests 10/10, TypeScript clean, webpack and default builds pass, e2e matrix passes (one Brave run failed under load, rerun passed). Review servers left running (§3). Not done: Phase 2 (needs the owner's session), real webcam/hand/phone checks. No commit, push or merge. |

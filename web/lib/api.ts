@@ -6,41 +6,42 @@ export class ApiError extends Error {
   }
 }
 
-// Local testing without passwords (server started with DEV_NO_LOGIN=true): open a page with
-// ?as=<username> and this tab acts as that person. Kept per tab, so two tabs can be two people.
-const DEV_KEY = "arguide.devUser";
-export function rememberDevUser() {
+// No sign-in for now: each tab remembers which person it acts as, so two tabs can be two people.
+// Set by the pick-a-person screen, or by opening a page with ?as=<username>. Google sign-in replaces this.
+const PERSON_KEY = "arguide.person";
+export function choosePerson(username: string | null) {
   try {
-    const as = new URLSearchParams(window.location.search).get("as");
-    if (as) sessionStorage.setItem(DEV_KEY, as);
+    if (username) sessionStorage.setItem(PERSON_KEY, username);
+    else sessionStorage.removeItem(PERSON_KEY);
   } catch {}
 }
-function devUser(): string | null {
+export function personFromAddress() {
+  const as = new URLSearchParams(window.location.search).get("as");
+  if (as) choosePerson(as);
+}
+export function person(): string | null {
   try {
-    return sessionStorage.getItem(DEV_KEY);
+    return sessionStorage.getItem(PERSON_KEY);
   } catch {
     return null;
   }
 }
 
-/** Calls the Python server through Next.js (same address, so the sign-in cookie is sent). */
+/** Calls the Python server through Next.js (same address). */
 export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const { json, ...rest } = init;
-  const dev = typeof window !== "undefined" ? devUser() : null;
+  const who = typeof window !== "undefined" ? person() : null;
   const res = await fetch(`/api${path}`, {
-    credentials: "same-origin",
     ...rest,
     headers: {
       ...(json === undefined ? {} : { "content-type": "application/json" }),
-      ...(dev ? { "x-dev-user": dev } : {}),
+      ...(who ? { "x-arguide-user": who } : {}),
       ...(rest.headers as Record<string, string> | undefined),
     },
     body: json === undefined ? rest.body : JSON.stringify(json),
   });
   if (!res.ok) {
-    if (res.status === 401 && path !== "/auth/login" && typeof window !== "undefined") {
-      window.location.assign("/login");
-    }
+    if (res.status === 401 && typeof window !== "undefined") window.location.assign("/login");
     throw new ApiError(res.status, await errorMessage(res));
   }
   return res.json() as Promise<T>;
@@ -60,4 +61,5 @@ async function errorMessage(res: Response): Promise<string> {
 
 export const homeFor = (role: Role) => (role === "technician" ? "/tech" : "/expert");
 
-export const fileUrl = (eventId: number) => `/api/files/${eventId}`;
+// Pictures and videos cannot send a header, so the person goes in the address.
+export const fileUrl = (eventId: number) => `/api/files/${eventId}?user=${encodeURIComponent(person() ?? "")}`;
