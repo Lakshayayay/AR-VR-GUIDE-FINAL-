@@ -373,7 +373,28 @@ try {
   await Promise.all([expert, tech].map((p, i) => p.waitForFunction((before) => findColours().orangeCount >= before * 0.98, beforeRub[i], { timeout: 5000 })));
   step("partial rubbing and undo update both screens");
   await expert.getByRole("button", { name: "Resume" }).click();
-  await expert.getByRole("button", { name: "Clear all" }).click();
+  if (FAKE_HAND) {
+    // A thumbs-down held for a second clears every drawing, the expert's too.
+    await tech.getByText("Picture frozen by Dr. Mehta").waitFor({ state: "detached" });
+    await tech.getByRole("button", { name: "Clear all" }).waitFor();
+    await tech.waitForTimeout(300); // resuming starts a new hand worker
+    await tech.evaluate(() => {
+      const p = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
+      p[0] = { x: 0.5, y: 0.62, z: 0 };
+      p[5] = { x: 0.465, y: 0.55, z: 0 };
+      p[17] = { x: 0.535, y: 0.55, z: 0 };
+      p[4] = { x: 0.7, y: 0.5, z: 0 }; // thumb well away from the index fingertip: not a pinch
+      window.e2eHandWorker.postMessage({ testHand: { landmarks: p, gesture: "Thumb_Down", score: 0.95 } });
+    });
+    await tech.getByText("Keep holding to clear all drawings…").waitFor({ timeout: 5000 });
+    await shot(tech, "04d-tech-clear-hold");
+    await tech.getByText("All drawings cleared.").waitFor({ timeout: 5000 });
+    await expert.getByText("All drawings were cleared.").waitFor({ timeout: 5000 });
+    await tech.getByRole("button", { name: "Clear all" }).waitFor({ state: "detached", timeout: 5000 });
+    await tech.getByText("Keep holding to clear all drawings…").waitFor({ state: "detached" });
+    await tech.evaluate(() => window.e2eHandWorker.postMessage({ testHand: null }));
+    step("synthetic thumbs-down held for a second clears all drawings on both screens");
+  } else await expert.getByRole("button", { name: "Clear all" }).click();
 
   await expert.getByRole("button", { name: "Freeze" }).click();
   await tech.getByText("Picture frozen by Dr. Mehta").waitFor();
@@ -402,12 +423,28 @@ try {
     // Wait until the step's result has come back, or the next click would hit the same step again.
     for (let t = 0; t < 50 && (await open.count()) >= before; t++) await expert.waitForTimeout(100);
   }
+  // With every step answered, the technician's card gets out of the way by itself; it can be opened and hidden again.
+  const doneCard = tech.getByText(/steps have a result/);
+  await doneCard.waitFor();
+  const doneChip = tech.getByRole("button", { name: "Checklist done, waiting for sign-off" });
+  await doneChip.waitFor({ timeout: 8000 });
+  await doneCard.waitFor({ state: "detached" });
+  await doneChip.click();
+  await doneCard.waitFor();
+  await tech.getByRole("button", { name: "Hide" }).click();
+  await doneChip.waitFor();
+  await shot(tech, "06b-tech-checklist-done");
+  step("the finished checklist shrinks by itself, reopens with a tap and hides again");
+
   await panel.getByRole("button", { name: "Sign off checklist" }).click();
   await panel.getByText("SIGNED OFF").waitFor();
-  await tech.getByText("SIGNED OFF").waitFor();
+  await tech.getByText("SIGNED OFF", { exact: true }).waitFor();
   await shot(tech, "07-tech-signed-off");
   await shot(expert, "08-expert-signed-off");
-  step("checklist signed off; stamp shows on both sides");
+  await tech.getByRole("button", { name: "Signed off", exact: true }).waitFor({ timeout: 8000 });
+  await tech.getByText("SIGNED OFF", { exact: true }).waitFor({ state: "detached" });
+  await shot(tech, "07b-tech-signed-off-shrunk");
+  step("checklist signed off; stamp shows on both sides, then shrinks on the technician's");
 
   // The technician can end the call while the expert is still recording.
   await expert.getByRole("button", { name: "Record" }).click();

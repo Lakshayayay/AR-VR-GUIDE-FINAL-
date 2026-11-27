@@ -33,7 +33,7 @@ npm test                                   # server tests (repo root)
 cd web && npm test                         # AR unit tests (tracker accuracy, hand gestures, drawing projection)
 cd web && npx tsc --noEmit && npx next build
 npm run e2e                                # needs both servers running and the e2e accounts (STATUS.md §3); the Python server in NORMAL login mode, not DEV_NO_LOGIN
-E2E_CLIP=object E2E_FAKE_HAND=1 npm run e2e  # still camera, moving card; generated hand: rub, pinch line (see README "Checks")
+E2E_CLIP=object E2E_FAKE_HAND=1 npm run e2e  # still camera, moving card; generated hand: rub, pinch line, thumbs-down clear (see README "Checks")
 ```
 Run the e2e against the production build and against `next dev`, and in Brave when behaviour differs between browsers (`CHROME_PATH`).
 

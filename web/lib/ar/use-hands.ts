@@ -84,7 +84,7 @@ export function useHands(
       if (frameCallback) videoRef.current?.cancelVideoFrameCallback(frameCallback);
       w.terminate();
       // End an active stroke before clearing the cursor when hands are disabled or the call freezes.
-      handler.current([{ type: "draw-end" }, { type: "erase-end" }, { type: "gone" }], null, null);
+      handler.current([{ type: "draw-end" }, { type: "erase-end" }, { type: "clear-cancel" }, { type: "gone" }], null, null);
     };
   }, [enabled, videoRef]);
 

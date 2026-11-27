@@ -265,6 +265,7 @@ export function useCall(sessionId: number, side: Side) {
         lifetime.current.clear();
         mine.current = [];
         setShapes({});
+        toast("All drawings were cleared.");
       },
       "ann:erase": ({ opId, changes }: { opId: string; changes: EraseChange[] }) => setShapes((s) => applyErase(s, opId, changes)),
       "ann:erase:undo": ({ opId }: { opId: string }) => setShapes((s) => undoErase(s, opId)),

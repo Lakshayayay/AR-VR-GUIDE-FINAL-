@@ -114,6 +114,11 @@ export function StepCard({ call, onHide }: { call: Call; onHide: () => void }) {
   const [noting, setNoting] = useState(false);
   const steps = call.session?.checklist?.steps ?? [];
   const current = steps.findIndex((_, i) => !call.steps[i]);
+  const hide = (
+    <button onClick={onHide} className="rounded-md px-2 py-1 text-sm text-dim underline">
+      Hide
+    </button>
+  );
   if (current === -1) {
     return (
       <div className="rounded-xl bg-panel/95 p-4 text-center">
@@ -122,6 +127,7 @@ export function StepCard({ call, onHide }: { call: Call; onHide: () => void }) {
         ) : (
           <p>All {steps.length} steps have a result. The expert will sign off.</p>
         )}
+        <div className="mt-2">{hide}</div>
       </div>
     );
   }
@@ -133,9 +139,7 @@ export function StepCard({ call, onHide }: { call: Call; onHide: () => void }) {
           Step {current + 1} of {steps.length}
           {step.critical && <span className="ml-2 font-bold text-caution">Critical</span>}
         </p>
-        <button onClick={onHide} className="rounded-md px-2 py-1 text-sm text-dim underline">
-          Hide
-        </button>
+        {hide}
       </div>
       <p className="mt-1 text-lg font-bold">{step.text}</p>
       {noting ? (

@@ -20,10 +20,10 @@ function hand(tip: [number, number], pinch: number, palm = 0.12, gesture = "None
   return { landmarks: p, gesture, score: 0.9 };
 }
 
-function run(frames: (HandFrame | null)[]) {
+function run(frames: (HandFrame | null)[], every = dt) {
   const h = createHands();
   const events: HandEvent[] = [];
-  frames.forEach((f, i) => events.push(...h.update(f, i * dt, 1)));
+  frames.forEach((f, i) => events.push(...h.update(f, i * every, 1)));
   return events;
 }
 const count = (events: HandEvent[], type: HandEvent["type"]) => events.filter((e) => e.type === type).length;
@@ -143,6 +143,43 @@ test("a line ends when the hand leaves the picture", () => {
   assert.equal(count(events, "draw-start"), 1);
   assert.equal(count(events, "draw-end"), 1);
   assert.equal(events[events.length - 1].type, "gone");
+});
+
+// ---- thumbs down, held: clear all (it cannot be undone, so it is strict) ----
+
+const down = (n: number, score = 0.9, pinch = 1.5) =>
+  Array.from({ length: n }, () => ({ ...hand([0.5, 0.5], pinch, 0.12, "Thumb_Down"), score }));
+const rest = (n: number) => Array.from({ length: n }, () => hand([0.5, 0.5], 1.5));
+const clears = (events: HandEvent[]) => [count(events, "clear-hold"), count(events, "clear"), count(events, "clear-cancel")];
+
+test("a thumbs-down held for a second clears all, after saying it is about to", () => {
+  assert.deepEqual(clears(run(down(29))), [1, 0, 0], "not before a second has passed");
+  const events = run(down(45));
+  assert.deepEqual(clears(events), [1, 1, 0]);
+  assert.ok(events.findIndex((e) => e.type === "clear-hold") < events.findIndex((e) => e.type === "clear"));
+});
+
+test("letting go of a thumbs-down early, or taking the hand away, cancels", () => {
+  assert.deepEqual(clears(run([...down(15), ...rest(10), ...down(1)])), [1, 0, 1], "hand relaxed");
+  const gone = run([...down(15), ...Array.from({ length: 10 }, () => null)]);
+  assert.deepEqual(clears(gone), [1, 0, 1], "hand gone");
+});
+
+test("one thumbs-down clears once; letting go arms it again", () => {
+  assert.deepEqual(clears(run(down(120))), [1, 1, 0], "held for 4 s");
+  assert.deepEqual(clears(run([...down(45), ...rest(5), ...down(45)])), [2, 2, 0]);
+});
+
+test("a blip, an unsure reading or a pinch never starts a clear; one misread picture does not cancel it", () => {
+  assert.deepEqual(clears(run([...rest(5), ...down(1), ...rest(5)])), [0, 0, 0], "one picture");
+  assert.deepEqual(clears(run(down(60, 0.5))), [0, 0, 0], "unsure");
+  assert.deepEqual(clears(run(down(60, 0.9, 0.1))), [0, 0, 0], "pinching");
+  assert.deepEqual(clears(run([...down(15), ...rest(1), ...down(20)])), [1, 1, 0], "one misread picture");
+});
+
+test("a slow phone needs enough pictures, not just a long enough time", () => {
+  assert.deepEqual(clears(run(down(3), 600)), [1, 0, 0], "3 pictures over 1.2 s");
+  assert.deepEqual(clears(run(down(6), 600)), [1, 1, 0]);
 });
 
 // ---- an open hand, worked out from the finger joints themselves ----

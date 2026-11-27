@@ -73,7 +73,7 @@ npm run e2e         # two browsers run a whole call with a moving test panel and
 
 The e2e signs in with passwords, so the Python server must run in **normal** mode. With `DEV_NO_LOGIN=true` everyone acts as the first expert and the test's "technician" becomes the expert.
 
-- `E2E_FAKE_HAND=1`: also feeds generated hand landmarks through the gesture flow (open palm rubs, a pinch draws one line). It does not test recognition of a real hand.
+- `E2E_FAKE_HAND=1`: also feeds generated hand landmarks through the gesture flow (open palm rubs, a pinch draws one line, a held thumbs-down clears all). It does not test recognition of a real hand.
 - `E2E_CLIP=object`: the test camera stays still while a small card carrying the dot moves, to check that drawings follow an object and not the background.
 - `BASE_URL` (default `http://127.0.0.1:3000`) and `CHROME_PATH` choose the site and the browser, for example `next dev` or Brave.
 
