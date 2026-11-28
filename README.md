@@ -34,7 +34,7 @@ npm run dev:web     # screens on http://localhost:3000
 
 Open http://localhost:3000. On a fresh database, enter your name to create the first admin. Add technicians and experts on the **People** page and edit the three starter checklists on **Checklists**. If port 3000 is busy, start the screens with `cd web && npx next dev -p 3100` and open that address instead.
 
-If you are moving from the old password-based database, keep that database and start the API with a new `DATA_DIR` so ArGuide can create its current tables.
+The API creates and upgrades its database tables by itself when it starts. Before it changes the tables of a database that already has records, it saves a copy beside it (`arguide.db.pre-<version>`). The one exception is a database from the old password-based version: keep it, and start the API with a new `DATA_DIR`.
 
 ## Try a call in two tabs
 
@@ -80,6 +80,19 @@ From `web/` in another terminal, start `BACKEND_URL=http://127.0.0.1:8001 npm ru
 - `E2E_FAKE_HAND=1`: also feeds generated hand landmarks through the gesture flow (open palm rubs, a pinch draws one line, a held thumbs-down clears all). It does not test recognition of a real hand.
 - `E2E_CLIP=object`: the test camera stays still while a small card carrying the dot moves, to check that drawings follow an object and not the background.
 - `BASE_URL` (default `http://127.0.0.1:3000`) and `CHROME_PATH` choose the site and the browser, for example `next dev` or Brave.
+
+## Changing the database tables
+
+Edit the models in `backend/app/db.py`, then add a migration: a small file that upgrades databases that already exist. From `backend/`, using the next free number:
+
+```bash
+export DATA_DIR="$(mktemp -d)"
+uv run alembic upgrade head                    # a throwaway database at the latest version
+uv run alembic revision --autogenerate --rev-id 0002 -m "what changed"
+unset DATA_DIR
+```
+
+Read the new file in `backend/app/migrations/versions/` before keeping it. Only add things (new tables; new columns that may be empty or have a `server_default`) and name every new foreign key. `npm test` fails if a model changes without a migration.
 
 ## Settings
 

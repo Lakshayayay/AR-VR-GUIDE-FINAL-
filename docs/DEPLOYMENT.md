@@ -24,4 +24,6 @@ This reference setup runs Next.js and one Python process behind a single HTTPS a
 
 Stop the API during a coordinated backup, copy the SQLite database and uploads from `DATA_DIR` together, then restart it. Store an encrypted copy of the backup and the service configuration securely. Restore both database and uploads together on a test host, confirm the file ownership, restart services and open an existing report. Keep the previous application release available so code can be rolled back independently of the data backup.
 
+When an updated ArGuide needs new tables or columns, the API upgrades the database as it starts. For SQLite it first saves a copy beside it as `arguide.db.pre-<version>`. The copy holds the database only, not uploads, and does not replace backups. If `DATABASE_URL` points to another database, back it up before updating. Upgrades only add things, so the previous release can still run on an upgraded database. Run one API process.
+
 Monitor service health, available disk space, certificate expiry and coturn allocation failures. Do not put session content, passwords or TURN secrets in logs. No actual hosting or relay has been provisioned by this document.

@@ -6,6 +6,7 @@ from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint, create_
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from .config import DATABASE_URL
+from .migrate import upgrade_db
 
 ROLES = ("technician", "expert", "admin")
 
@@ -175,9 +176,7 @@ SEED_CHECKLISTS = [
 
 
 def init_db() -> None:
-    # ponytail: create_all instead of migrations. Add Alembic before the first
-    # table change on a database that holds real records.
-    Base.metadata.create_all(engine)
+    upgrade_db(engine)  # creates or updates the tables; a new column needs a file in migrations/
     with SessionLocal() as db:
         if db.scalar(select(Checklist.id).limit(1)) is None:
             for name, desc, steps in SEED_CHECKLISTS:
