@@ -1,6 +1,8 @@
 # ArGuide status
 
-**Last updated:** 2026-11-28 · **Branch:** `main` · **Last commit:** `1837b2b` (UI refresh merge, followed by this status update). The merge of PR #1 is `4d31085`. The tag `pre-refactor` (`599369b`) marks the old prototype.
+**Last updated:** 2026-11-28 · **Branch:** `feature/product-migrations` (pushed; no pull request yet) · **Last commit:** `6f9c347` (database upgrades, followed by this status update). The merge of PR #3 is `e4730a5`. The merge of PR #1 is `4d31085`. The tag `pre-refactor` (`599369b`) marks the old prototype.
+
+> **▶ Resume here (2026-11-28).** The owner confirmed the target (HAL's iDEX DRISHTI Challenge 9) and approved [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md): four pull requests, **A** database upgrades, **B** aircraft register, **C** solo pre-flight check, **D** defect log. **A is committed and pushed on `feature/product-migrations`; no pull request has been opened.** B to D are not started. Exact next steps and notes are in §8.
 
 > **UI refresh and clean start (2026-11-28).** ArGuide creates a first admin on a fresh database and keeps three editable starter checklists. The Flight line refresh includes role-specific Home screens, desktop navigation and phone tabs, responsive records, a printable report and updated People and Checklist screens. Call notifications leave the call controls available. The previous local test database was removed (§3).
 
@@ -20,7 +22,7 @@ Read this first in every session. Rules for keeping it current are in [`AGENTS.m
 
 ## 1. In one paragraph
 
-ArGuide is live remote help for aircraft maintenance. A technician points a phone camera at the job. A remote expert sees it, draws on it, freezes the picture, walks through a checklist and signs it off, and the call is saved as a printable report. The old prototype (a Node server, two Vite/React apps and a Gemini "AI co-pilot"; removed on 2026-11-21, kept in git under the tag `pre-refactor`) was replaced by a new stack: **`web/` (Next.js 16)** and **`backend/` (Python, FastAPI + python-socketio)**. Milestones M0 to M5 of the plan are built and tested. **There is no cloud AI in this phase, by the owner's decision.** The one exception (2026-11-16) is the AR core: on-device hand tracking and image tracking, served from our own server. The project most likely targets HAL's iDEX DRISHTI Challenge 9 (Do-228 AR remote assistance). That's inferred from the code and **not confirmed by the owner**.
+ArGuide is live remote help for aircraft maintenance. A technician points a phone camera at the job. A remote expert sees it, draws on it, freezes the picture, walks through a checklist and signs it off, and the call is saved as a printable report. The old prototype (a Node server, two Vite/React apps and a Gemini "AI co-pilot"; removed on 2026-11-21, kept in git under the tag `pre-refactor`) was replaced by a new stack: **`web/` (Next.js 16)** and **`backend/` (Python, FastAPI + python-socketio)**. Milestones M0 to M5 of the plan are built and tested. **There is no cloud AI in this phase, by the owner's decision.** The one exception (2026-11-16) is the AR core: on-device hand tracking and image tracking, served from our own server. The project targets HAL's iDEX DRISHTI Challenge 9 (Do-228: AR remote assistance, pre-flight check inspection, later defect detection and predictive maintenance), **confirmed by the owner on 2026-11-28**.
 
 ## 2. Where things stand
 
@@ -51,6 +53,20 @@ The refurbished base was merged in PR #1 (`4d31085`). The refresh is on `main` t
 | Robustness | Each call has its own private room. Rejoining restores drawings and freeze. A call left with nobody connected for 2 minutes is ended automatically. Replies to an outdated video offer are ignored |
 
 ### Checks (2026-11-21, final tree before the merge; rows marked historical were not re-run)
+
+**Database upgrades (2026-11-28, `feature/product-migrations`):** server tests 18 of 18 pass (13 earlier, 5 new, each seen failing first). Web tests 58 of 58, types clean, production build passes. The hand-written first migration produces the same table definitions as the old code (compared directly). A database made by `main`'s code was upgraded by the new server with its records kept, an empty folder started cleanly, and the old code still ran on the upgraded database. `web/` is unchanged from `main`.
+
+Two-browser calls (production build, Chrome for Testing) were unreliable while other apps loaded the Mac (load about 7 to 14 on 8 cores):
+
+| Call check | This branch, first batch | This branch, side by side | `main`'s server, side by side |
+|---|---|---|---|
+| Plain | Failed: box left the moving dot (11.8% of the width, last sample) | Pass | Pass |
+| Generated hand | Failed: hand loop 18/s (needs 20) | Pass | Failed: expert's arrow took 1582 ms (limit 1000) |
+| Moving card + generated hand | Failed: saved recording lacked the drawing (earlier live checks passed) | Failed: box not found again within 5 s of resuming | Failed: dot or box missing on the expert's side |
+
+"Side by side" used the same web build, alternating this branch's server and `main`'s. `main` fails too, so nothing shows the database change causes these; the cause is not confirmed. **The moving-card check did not pass on either today.** Rerun it on a quiet computer before merging.
+
+**Not run for this branch:** `next dev` and Brave. The step from version `0001` to a later one does not exist yet, so the backup copy is tested only on its own.
 
 **UI refresh (2026-11-28):** 13 server tests, 58 web tests, TypeScript, and the default and webpack production builds passed. The ordinary call, generated-hand call, and moving-card call with generated hands passed in Chrome for Testing on both `next start` and `next dev`. During a parallel repeat, the production generated-hand case timed out waiting for a pinch to end, and the development moving-card case timed out waiting for the rubbing banner to clear. Both passed in isolated reruns. The cause was not confirmed.
 
@@ -102,7 +118,7 @@ npm run dev:web                                      # Next.js on :3000
 
 **End-to-end test:** needs the people `ravi` (technician, "Ravi Kumar") and `mehta` (expert, "Dr. Mehta"). If Playwright's own browser isn't installed, run `npx playwright install chromium` or set `CHROME_PATH`. On the owner's Mac a cached Chromium exists at `~/Library/Caches/ms-playwright/chromium-1243/...`; Playwright 1.65 expects build 1255. **Browser and ports:** Playwright 1.65 expects Chromium build 1255, which is not installed here; set `CHROME_PATH` to the cached build `~/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` (Brave: `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`). For a production run: build with the test API's address (`BACKEND_URL=http://127.0.0.1:8001 npx next build --webpack`), start `npx next start -H 127.0.0.1 -p 3200`, then `BASE_URL=http://127.0.0.1:3200 npm run e2e`.
 
-The refresh's test servers on 8001, 8002, 3200 and 3201 were stopped. Browser test databases and generated video clips were removed. Screenshots are outside the repository. If another app uses port 3000, run `cd web && npx next dev -p 3100` and set the test's `BASE_URL` to that address.
+The refresh's test servers on 8001, 8002, 3200 and 3201 were stopped. Browser test databases and generated video clips were removed. Screenshots are outside the repository. After the 2026-11-28 database work no servers are running, test data was removed, and `backend/data` is empty. `web/.next` holds a production build that points at a test API on port 8001: run `npm run build` again before using `next start` normally (`npm run dev:web` is unaffected). If another app uses port 3000, run `cd web && npx next dev -p 3100` and set the test's `BASE_URL` to that address.
 
 ## 4. Map of the code
 
@@ -110,12 +126,14 @@ The refresh's test servers on 8001, 8002, 3200 and 3201 were stopped. Browser te
 |---|---|
 | `backend/app/main.py` | Starts FastAPI and Socket.IO together. On start, watches calls still marked active |
 | `backend/app/config.py` | Environment settings, including the data directory, origins and video connection settings |
-| `backend/app/db.py` | SQLAlchemy tables, JSON shapes sent to the browser, the 3 seed checklists, `init_db()` (create_all, no migrations yet) |
+| `backend/app/db.py` | SQLAlchemy tables, JSON shapes sent to the browser, the 3 seed checklists, `init_db()` (upgrades the tables, then seeds) |
+| `backend/app/migrate.py`, `backend/app/migrations/`, `backend/alembic.ini` | Database upgrades at start-up (Alembic). Checks a database made before migrations and marks it as version `0001`, refuses the password-era one, leaves a newer one alone, copies a SQLite file before changing it. How to add a migration: README |
 | `backend/app/auth.py` | First-admin setup, chosen person (header `x-arguide-user`, or `?user=` on GET) and role checks |
 | `backend/app/api.py` | REST: checklists, people, sessions, file upload/download, stats, ICE config |
 | `backend/app/realtime.py` | Live connection: call life cycle, relays, checklist, sign-off, chat, abandoned-call timer |
 | `backend/app/cli.py` | `create-user` command |
 | `backend/tests/test_call_flow.py` | Starts a real server; runs whole calls with 3 to 4 people |
+| `backend/tests/test_migrations.py` | New, old, password-era and newer databases, the backup copy, and a check that fails when a model changes without a migration |
 | `web/app/(auth)/login` | First-admin setup and person selection |
 | `web/app/(app)/layout.tsx` → `components/app-provider.tsx` | Loads the chosen person, opens the live connection, handles expert availability, ringing and notifications |
 | `web/app/(app)/(nav)/…` | Pages with the top bar: `tech`, `expert`, `expert/session/[id]` (console), `sessions`, `sessions/[id]` (report), `checklists`, `admin/users` |
@@ -172,6 +190,8 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 | AR stack stays as it is (owner, 2026-11-21) | OpenCV.js and MediaPipe stay. three.js was only used in the removed old prototype; the new app has no 3D library (real 3D is the parked Stage 4 trial) |
 | Hands-free clear all; checklist card gets out of the way (owner, 2026-11-28) | Thumbs-down held 1 s (chosen over a V sign and a fist). It cannot be undone, so it needs a confident `Thumb_Down` for both 1 s and 6 pictures (`CLEAR_*` in `web/lib/ar/hands.ts`). The finished checklist shrinks by itself after 4 s (chosen over a Hide link only, or removing it) |
 | Clean start and livelier navigation (owner, 2026-11-28) | Remove the local test call and made-up people. Let the first user create an admin and keep the three editable starter checklists. Keep Flight line, with a Home hub, top-bar icons on desktop, and bottom tabs on phones. The owner approved the full plan on 2026-11-28. |
+| Product layer (owner, 2026-11-28) | For HAL Challenge 9, thin and in order: aircraft register, solo pre-flight check, defect log. The technician signs their own solo check; an expert verifies each fixed defect (not the person who fixed it). Experts and admins add aircraft; a call for help may still use an unlisted tail number. Defects are raised only when a solo check is signed, never from calls. A manual log, not AI defect detection |
+| Database upgrades only add things (2026-11-28) | New tables, or new columns that may be empty or have a `server_default`; name new foreign keys. Older code then still runs on an upgraded database. Alembic is the one added dependency |
 | Work goes through pull requests (2026-11-21) | Branch off `main`, open a PR, merge with a merge commit so the separate commits stay in the history (`AGENTS.md`) |
 | Old Vercel sites (owner, 2026-11-21) | `ar-vr-guide-technician` and `ar-vr-guide-expert` (Vite, built from the removed `ArGuide/`) had their "Ignored Build Step" set to `exit 0`: they no longer rebuild and keep serving their last version. The old code's commits mention Render for the old server; it was not touched |
 
@@ -203,6 +223,8 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 - **Make each commit compile on its own, and check it.** Checking commit by commit in a temporary `git worktree` (`npx tsc --noEmit`, `npm test`) showed the AR library and the call screens could not be separate commits: `capture()` changed shape and its caller was in the next commit. For Python tests in a worktree with no network, run the main project's `.venv/bin/python -m pytest` with `PYTHONPATH` set to the worktree's `backend/`.
 - **Never report success for something empty.** If a call ends before the first picture is captured, `MediaRecorder` gives no data; the code threw away empty pieces and then uploaded an empty file under a "Recording saved" message. It showed up once in 7 end-to-end runs (a 0-byte `.webm`, then `416 Range Not Satisfiable` on the report). Check the result before saying it worked; a rare failure in a test is a real bug until shown otherwise.
 - **`next build` and `next dev` can run side by side in Next 16** (`.next` and `.next/dev`), and `BACKEND_URL` for the `/api` rewrites is read when building: build with the API address the test will use.
+- **Run the two-browser test on a quiet computer.** With other apps busy, runs failed in a different place each time (box lag, slow hand loop, slow drawing delivery, recording check). Before blaming a change, run the same web build against `main`'s API (`git archive main backend/app` into a temporary folder, start it from there with the project's `.venv`) and compare.
+- **This project's folder path contains a space.** `backend/alembic.ini` sets `path_separator = os`; without it Alembic splits paths on spaces.
 
 ## 7. Known limits (deliberate shortcuts; upgrade when needed)
 
@@ -210,7 +232,7 @@ Tables: `users`, `sessions` (stores a **copy** of checklist steps), `session_eve
 |---|---|---|
 | No sign-in: anyone who can reach the app can act as anyone | Local use only | Google sign-in replaces `find_person` in `auth.py` |
 | Live rooms and drawings kept in memory in one process | One server process; drawings lost on restart | Redis + `socketio.AsyncRedisManager` |
-| `create_all`, no migrations | Changing a table breaks existing databases | Add Alembic before the first change on real data |
+| Database upgrades run inside the API at start-up | One API process only. A first start interrupted half-way leaves a database that is refused (use a new `DATA_DIR`) | Run upgrades as their own step before starting several processes |
 | Sync SQLAlchemy inside async socket handlers | Fine for one site's traffic | Async engine if calls queue up |
 | Uploads go through the Next.js rewrite to local disk (`backend/data/uploads`) | Long recordings are large; free hosts wipe disks | Object storage, or upload straight to Python |
 | Expert sends audio only | The technician can't see the expert | Add expert video if wanted |
@@ -233,18 +255,32 @@ The approved UI refresh and clean start are complete and merged into `main`. Rea
 
 The finished plan is in [`docs/history/UI_REFRESH_PLAN.md`](docs/history/UI_REFRESH_PLAN.md). A fresh local run opens the first-admin setup. Run the app only on a trusted private network until sign-in is added.
 
-**Later, in order:**
-1. Define the full-stack product layer with the owner. The owner's description was product management for training and factory services as software. The users, first job, and existing workflow are still open. Write the plan in `docs/` and get approval before building.
-2. Add Alembic (migrations) before the first change to any table (§7).
-3. AR core open items, when the owner can supply hands and phones: a real pinch and rub in several rooms and lights; the `isOpenHand` factor (1.15 on the finger joints: if a relaxed hand erases by accident, raise it); why expert drawings once did not reach the technician (not reproduced); the cause of the rare empty recording (§2 Checks); Stage 4 (real 3D on Android) needs a separate owner decision.
-4. If the owner asks: verify the hosted setup, the relay, backups and device compatibility.
-5. P2 features: low-bandwidth mode, observers, QR code, one-command Docker install for closed networks.
-6. Only when the owner starts it: the AI phase (defect detection and the rest, per `docs/history/REFURBISH_PLAN.md` §6 "Later"). The old Gemini key is saved outside the repo in the owner's home folder.
+**Product layer, in order** (plan: [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md); each branches off `main` after the previous one merges):
+
+| Step | State |
+|---|---|
+| **A. Database upgrades** ([detailed steps](docs/PRODUCT_PLAN_PR_A.md)) | Committed and pushed on `feature/product-migrations`. **Next:** rerun the moving-card call check on a quiet computer (§2). **Waiting on the owner:** open the pull request and merge it (merge commit) |
+| **B. Aircraft register** | Not started. Begins after A is merged |
+| **C. Solo pre-flight check** | Not started |
+| **D. Defect log** | Not started |
+
+**Starting B:** check that A is merged, branch off `main`, write the detailed steps in `docs/PRODUCT_PLAN_PR_B.md` (tests first), then build. Things that will bite:
+- `backend/tests/test_migrations.py` makes its "before migrations" database with `Base.metadata.create_all`. Once the models change, build it by migrating to `0001` and dropping the `alembic_version` table, and expect the newest version where the tests now expect `BASELINE`. Add a `0001` to `0002` test that checks the records and the backup copy.
+- Move the server fixture and helpers from `test_call_flow.py` into `tests/conftest.py` (one shared server). That file asserts exact call counts and search results, so new tests need their own tail numbers and before/after counts.
+- `web/e2e/call.mjs` depends on the labels "Aircraft" (typed into, so keep it a text box) and "Checklist", the "Call an expert" button, the "Current step" region and "Last 7 days".
+- A generated migration may add a foreign key with no name; name it (SQLite needs that).
+
+**After that, or when the owner asks:**
+- AR core open items, when the owner can supply hands and phones: a real pinch and rub in several rooms and lights; the `isOpenHand` factor (1.15 on the finger joints: if a relaxed hand erases by accident, raise it); why expert drawings once did not reach the technician (not reproduced); the cause of the rare empty recording (§2 Checks); Stage 4 (real 3D on Android) needs a separate owner decision.
+- Verify the hosted setup, the relay, backups and device compatibility.
+- P2 features: low-bandwidth mode, observers, QR code, one-command Docker install for closed networks.
+- The AI phase, only when the owner starts it (defect detection and the rest, per `docs/history/REFURBISH_PLAN.md` §6 "Later"). The old Gemini key is saved outside the repo in the owner's home folder.
 
 ## 9. Session log
 
 | Date | What happened |
 |---|---|
+| 2026-11-28 (product plan and PR A) | The owner confirmed the HAL challenge as the target and chose: all three features, thin, in order; technician signs solo checks and experts verify fixes; experts and admins add aircraft; defects only from signed checks. Plan approved and saved in `docs/PRODUCT_PLAN.md`. Built PR A (Alembic upgrades at start-up, 5 new tests) on `feature/product-migrations`, then committed and pushed it at the owner's request. Results in §2. Reviewed by the author only (no separate reviewer). No pull request opened. Test servers stopped, test data removed. Unfinished: a passing moving-card call check (it failed on `main` too), pull request and merge, B to D, real-webcam check of the thumbs-down clear. |
 | 2026-11-28 (UI refresh merge) | Merged PR #2 into `main` as `1837b2b`, preserving the password removal, hands-free changes and UI refresh as separate commits. Verified both old Vercel projects skipped the PR builds. Brave results are in §2. The temporary review and test servers were stopped, and browser test databases and clips were removed. The next local run starts at first-admin setup. |
 | 2026-11-28 (UI refresh verification) | Finished first-admin setup and the Flight line refresh. Confirmed that simultaneous setup requests create one admin, removed the local test database after checking its contents, and updated the run and private-network instructions. Unit checks, types, both builds, two-browser checks and the responsive review are recorded in §2. The real-webcam check remains open. |
 | 2026-11-28 (UI refresh approval) | The owner approved the plan and asked to implement it. |
